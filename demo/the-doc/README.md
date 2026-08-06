@@ -39,9 +39,9 @@ Have fun.
 
 Type a direction anywhere in the document. Press Ctrl+S on Windows or Linux. Press Command+S on macOS.
 
-The status changes from `Unsaved` to `Waiting for the agent`. Hypervigilant sends the changed Markdown to the agent. The agent edits `PROJECT.md`, and the browser loads the new version without a page refresh.
+The status changes from `Unsaved` to `Waiting for the agent`. Hypervigilant sends the changed Markdown to the agent. The agent treats the diff as desired reality and tries to make it true with guarded edits to `PROJECT.md` and supporting workspace assets. It verifies the result before claiming success. If the required change is outside the workspace or its tools, it records one specific blocker instead.
 
-A save with no content change does not dispatch the agent.
+The browser loads the revised document without a page refresh. A save with no content change does not dispatch the agent.
 
 ## Add images
 

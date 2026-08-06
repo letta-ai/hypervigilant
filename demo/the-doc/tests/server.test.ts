@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ActivityFeed } from "../activity.ts";
 import {
@@ -9,9 +10,9 @@ import {
   startTheDocServer,
 } from "../server.ts";
 
-const testRoot = join(import.meta.dir, "tmp-the-doc");
-const documentPath = join(testRoot, "PROJECT.md");
-const outsideImagePath = join(import.meta.dir, "outside-the-doc.svg");
+let testRoot: string;
+let documentPath: string;
+let outsideImagePath: string;
 const initialMarkdown = "# New Project\n\nStart here.\n";
 const canonicalMarkdown = `# The Doc
 
@@ -25,8 +26,9 @@ let server: TheDocServer | null = null;
 let activityFeed: ActivityFeed;
 
 beforeEach(async () => {
-  await rm(testRoot, { recursive: true, force: true });
-  await mkdir(testRoot, { recursive: true });
+  testRoot = await mkdtemp(join(tmpdir(), "hypervigilant-the-doc-"));
+  documentPath = join(testRoot, "PROJECT.md");
+  outsideImagePath = `${testRoot}-outside.svg`;
   await writeFile(documentPath, initialMarkdown, "utf8");
   activityFeed = new ActivityFeed();
   activityFeed.upsert({
@@ -58,6 +60,17 @@ describe("The Doc server", () => {
     expect(await Bun.file(join(import.meta.dir, "..", "PROJECT.md.example")).text()).toBe(
       canonicalMarkdown,
     );
+  });
+
+  it("guides the agent to make each saved diff true", async () => {
+    const config = await Bun.file(
+      join(import.meta.dir, "..", "hypervigilant.toml.example"),
+    ).text();
+    expect(config).toContain("Treat each saved diff as desired reality");
+    expect(config).toContain("use Edit or Write");
+    expect(config).toContain("Before claiming success, verify");
+    expect(config).toContain("outside the workspace or an unavailable tool");
+    expect(config).not.toContain("Do not edit any other file");
   });
 
   it("reads and saves the fixed Markdown document", async () => {

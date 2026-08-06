@@ -19,7 +19,7 @@ It is not tied to code or specifications. It can watch any directory of text fil
 - **Prose and research workflows:** Review contracts, RFCs, essays, reports, prompt files, CSVs, or other text as they change.
 - **Agent-on-agent oversight:** Put an independent Letta agent over files another coding agent is editing.
 
-The reusable primitive is simple: **a file changes, a persistent agent gets the diff and can respond.**
+The reusable primitive is simple: **a file changes, a persistent agent gets the diff and can act.**
 
 ## How it works
 
@@ -332,7 +332,7 @@ The key must start with `sk-let-`. It is passed to the local Agent SDK runtime t
 
 ## Included demos
 
-[`demo/the-doc/`](demo/the-doc/) is **The Doc**: one `PROJECT.md` file in a toolbar-free browser editor. Edit the formatted document and press Ctrl+S or Command+S. Each changed save dispatches the agent, and the agent's file revision appears in the open editor. A right-hand listener gutter shows which processes receive the diff and what each process is doing. Relative Markdown images render from guarded workspace assets.
+[`demo/the-doc/`](demo/the-doc/) is **The Doc**: one `PROJECT.md` file in a toolbar-free browser editor. Edit the formatted document and press Ctrl+S or Command+S. Each changed save dispatches the agent, and the agent's file revision appears in the open editor. The demo prompt tells the agent to make the diff true with verified workspace changes instead of only discussing it. A right-hand listener gutter shows which processes receive the diff and what each process is doing. Relative Markdown images render from guarded workspace assets.
 
 ```bash
 bun run demo:the-doc
