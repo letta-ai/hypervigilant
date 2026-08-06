@@ -27,6 +27,15 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function waitFor(condition: () => boolean, timeoutMs = 2_000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() >= deadline) return false;
+    await sleep(25);
+  }
+  return true;
+}
+
 async function rmrf(path: string): Promise<void> {
   try {
     await rm(path, { recursive: true, force: true });
@@ -419,7 +428,9 @@ describe("integration", () => {
       await sleep(50);
 
       await unlink(join(testRoot, "file.md"));
-      await sleep(200);
+      expect(await waitFor(() => delivered.some((change) => change.relPath === "file.md"))).toBe(
+        true,
+      );
 
       await watcher.stop();
       await batcher.close();
@@ -458,7 +469,9 @@ describe("integration", () => {
 
       suppressedPaths.add("file.md");
       await writeFile(join(testRoot, "file.md"), "agent modified", "utf8");
-      await sleep(600);
+      expect(
+        await waitFor(() => suppressedChanges.some((change) => change.relPath === "file.md")),
+      ).toBe(true);
 
       await watcher.stop();
       await batcher.close();
