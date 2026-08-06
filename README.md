@@ -2,9 +2,9 @@
 
 **Trigger persistent Letta agents from file changes.**
 
-Hypervigilant watches selected text files and turns their changes into persistent [Letta Agent SDK](https://docs.letta.com/agent-sdk) conversations. It sends exact unified diffs, preserves conversation context across restarts, and lets the agent review, use its attached Letta tools, or edit the watched project.
+Hypervigilant watches selected files and turns their changes into persistent [Letta Agent SDK](https://docs.letta.com/agent-sdk) conversations. It sends exact unified diffs for text and metadata-only events for binary files. It preserves conversation context across restarts and gives the agent scoped tools for the watched project.
 
-It is not tied to code or specifications. It can watch any directory of text files: a software project, an Obsidian vault, documentation, operational notes, infrastructure configuration, localization files, research, or prose.
+It is not tied to code or specifications. It can watch software projects, notes, documentation, configuration, research, prose, and file inboxes.
 
 ## What it enables
 
@@ -26,14 +26,15 @@ The reusable primitive is simple: **a file changes, a persistent agent gets the 
 1. Hypervigilant records a baseline for matching files.
 2. It watches additions, edits, and deletions.
 3. Repeated saves are batched and collapsed.
-4. Each batch becomes a unified diff against the last successfully delivered content.
-5. The diff is sent to a persistent Letta conversation.
-6. The agent reviews the change, uses its attached Letta tools, or makes scoped file edits.
-7. Successful delivery advances the baseline. Failed delivery does not.
+4. Each text batch becomes a unified diff against the last delivered content.
+5. Binary changes become metadata events with the path, event type, and size.
+6. The change payload is sent to a persistent Letta conversation.
+7. The agent reviews the change, uses its attached Letta tools, or makes scoped file edits.
+8. Successful delivery advances the baseline. Failed delivery does not.
 
-Changes made while Hypervigilant is stopped are detected at the next startup. The resulting diff describes the net change since the agent last received that file.
+Hypervigilant detects changes made while it is stopped at the next startup. The payload describes the net change since the last delivery.
 
-When the agent edits a watched file, Hypervigilant suppresses the resulting watcher event and folds the final text into the baseline. This prevents agent-edit feedback loops.
+When the agent edits a watched file, Hypervigilant suppresses the resulting watcher event and updates the baseline. This prevents agent-edit feedback loops.
 
 ## Quick start
 
@@ -75,6 +76,29 @@ hypervigilant --help
 ```
 
 ## Examples
+
+### Tag new images in an inbox
+
+This config watches an image folder. An image-capable agent reads each new image and groups its description and tags in `catalog.md`.
+
+```toml
+version = 1
+project = "image-inbox"
+agent_id = "agent-xxx"
+include = ["**/*.png", "**/*.jpg", "**/*.jpeg", "**/*.webp"]
+exclude = [".hypervigilant/**"]
+max_file_size_bytes = 25000000
+mode = "edit"
+routing = "project"
+instructions = "Use ViewImage for each added or changed image. Update catalog.md with its path, description, category, and tags."
+
+[tools]
+auto_allow = ["ViewImage"]
+```
+
+Start the watcher before you add images. The first run records existing files without sending them. Use `hypervigilant permissions yolo /path/to/image-inbox` if catalog writes must run without approval.
+
+Hypervigilant reports image events but does not move files. File moves need a separate guarded client tool or an attached Letta tool.
 
 ### Watch an Obsidian vault
 
@@ -181,7 +205,7 @@ branch_prefix = "hypervigilant"
 
 ### File selection
 
-`include` and `exclude` use project-relative globs. Hypervigilant skips files larger than `max_file_size_bytes` and rejects binary content by scanning for null bytes. It does not assume Markdown or source code.
+`include` and `exclude` use project-relative globs. Hypervigilant skips files larger than `max_file_size_bytes`. Text files produce unified diffs. Files with a null byte in the first 8 KiB produce metadata-only binary events.
 
 Symbolic links are not followed.
 
@@ -303,7 +327,7 @@ Private state stores:
 - The runtime permission override
 - Worktree metadata and process locks when worktree mode is active
 
-Full text is required to create exact incremental diffs after restart. Keep the state directory private. The default `.hypervigilant/` directory is excluded from Git.
+Text snapshots retain full content for exact incremental diffs. Binary snapshots retain only the content hash, size, and file kind. Keep the state directory private. The default `.hypervigilant/` directory is excluded from Git.
 
 API key lookup order is:
 
@@ -324,6 +348,7 @@ The key must start with `sk-let-`. It is passed to the local Agent SDK runtime t
 - Symlinked mutation paths are denied.
 - Hypervigilant state, active configuration, and Git metadata cannot be changed by the agent.
 - Failed delivery does not advance affected snapshots.
+- Prompts and snapshots for files classified as binary never contain file bytes.
 - A changed path waits for its default and all matching named conversations before it is complete.
 - Ambiguous post-send failures are not retried automatically.
 - Agent file writes are suppressed from the watcher to prevent feedback loops.
@@ -360,7 +385,7 @@ Run `hypervigilant help` for all flags.
 
 ## Limits
 
-- Hypervigilant watches text files only.
+- Binary classification checks for null bytes in the first 8 KiB. A binary format without null bytes can be treated as text.
 - A rename appears as a deletion and an addition.
 - Batching reports the net text change, not every intermediate save.
 - Prompt-rule configuration is loaded when the watcher starts.

@@ -11,15 +11,15 @@ implementation_links: [src/watch.ts, src/agent.ts, tests/integration.test.ts, RE
 
 ## Goal
 
-Build a TypeScript and Bun command-line application that watches selected text files in a project. The application sends clean diffs to a persistent Letta agent after each configured batch of saves.
+Build a TypeScript and Bun command-line application that watches selected files in a project. The application sends exact text diffs or bounded binary metadata to a persistent Letta agent after each configured batch of saves.
 
 ## Product behavior
 
 - A project configuration selects files with include and exclude globs.
 - The default selection includes Markdown and plain-text files.
-- The watcher stores the last delivered content of each file in local project state.
+- The watcher stores last-delivered text or binary metadata in local project state.
 - The watcher detects additions, edits, and deletions, including changes made while it was stopped.
-- A unified diff is the source payload sent to the agent.
+- Text files use unified diffs. Binary files use metadata-only events as specified by SPEC-0008.
 - Delivery supports one conversation for the project or one conversation for each file.
 - Batching supports debounce, fixed-window, and immediate delivery.
 - Review mode prevents file mutations.
@@ -33,7 +33,8 @@ Build a TypeScript and Bun command-line application that watches selected text f
 - [x] `hypervigilant watch` watches configured files and ignores configured exclusions.
 - [x] The first run creates a baseline without sending every existing file.
 - [x] Later runs send changes made while the watcher was stopped.
-- [x] Diffs use stable project-relative paths and unified diff syntax.
+- [x] Text diffs use stable project-relative paths and unified diff syntax.
+- [x] Binary files use bounded metadata-only events under SPEC-0008.
 - [x] Debounce batches collapse repeated saves to the latest content and enforce a maximum wait.
 - [x] Fixed and immediate batching modes work.
 - [x] Project and per-file conversation routes persist across restarts.
@@ -47,7 +48,7 @@ Build a TypeScript and Bun command-line application that watches selected text f
 
 ## Non-goals
 
-- Watching binary files.
+- Embedding binary bytes in prompts or local state.
 - Replacing Git or preserving full file history.
 - Detecting renames as a distinct operation.
 - Running several agent turns concurrently.

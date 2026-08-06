@@ -42,7 +42,7 @@
       "type": "integer",
       "minimum": 1,
       "default": 1048576,
-      "description": "Maximum text-file size in bytes."
+      "description": "Maximum watched-file size in bytes."
     },
     "mode": {
       "type": "string",

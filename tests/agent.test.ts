@@ -411,6 +411,7 @@ describe("agent", () => {
         relPath,
         absPath: `/project/${relPath}`,
         event: "change",
+        kind: "text",
         oldContent: "old",
         newContent: "new",
         hash: "new-hash",
@@ -462,6 +463,40 @@ describe("agent", () => {
       expect(calls[0]?.messages[0]).not.toContain("Configured local client tools:");
       expect(delivery.newState.projectConversation.conversationId).toBe("conv-new-1");
       expect(delivery.deliveredPaths).toEqual(["a.md", "b.md"]);
+    });
+
+    it("delivers binary metadata with an explicitly enabled image tool", async () => {
+      const { client, calls } = fakeClient();
+      await deliverBatch(
+        client,
+        {
+          version: 1,
+          agentId: "agent-xxx",
+          projectConversation: { conversationId: null },
+          fileConversations: {},
+          snapshots: {},
+        },
+        [
+          {
+            relPath: "inbox/photo.png",
+            absPath: "/project/inbox/photo.png",
+            event: "add",
+            kind: "binary",
+            oldContent: null,
+            newContent: null,
+            hash: "binary-hash-never-sent",
+            size: 2048,
+          },
+        ],
+        {
+          ...options,
+          clientTools: { autoAllow: ["ViewImage"], ask: [] },
+        },
+      );
+
+      expect(calls[0]?.options.allowedTools).toContain("ViewImage");
+      expect(calls[0]?.messages[0]).toContain("Binary file added: inbox/photo.png (2048 bytes)");
+      expect(calls[0]?.messages[0]).not.toContain("binary-hash-never-sent");
     });
 
     it("adds configured client tools and preserves their approval policies", async () => {

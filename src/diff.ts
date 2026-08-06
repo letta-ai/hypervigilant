@@ -51,15 +51,17 @@ export interface FileChange {
   relPath: string;
   oldContent: string | null;
   newContent: string | null;
+  kind?: "text" | "binary";
+  event?: "add" | "change" | "unlink";
+  size?: number | null;
 }
 
 export function renderBatchDiff(changes: FileChange[]): string {
   const parts: string[] = [];
   for (const change of changes) {
+    if (change.kind === "binary") continue;
     const diff = renderDiff(change.relPath, change.oldContent, change.newContent);
-    if (diff) {
-      parts.push(diff);
-    }
+    if (diff) parts.push(diff);
   }
   return parts.join("\n");
 }
@@ -68,11 +70,23 @@ export function renderBatchDiff(changes: FileChange[]): string {
  * Format a diff payload as a message suitable for sending to the agent.
  */
 export function formatDiffMessage(changes: FileChange[]): string {
+  const sections: string[] = [];
   const diff = renderBatchDiff(changes);
-  if (!diff.trim()) {
-    return "";
-  }
+  if (diff.trim()) sections.push(diff);
+
+  const binaryEvents = changes
+    .filter((change) => change.kind === "binary")
+    .map((change) => {
+      const verb =
+        change.event === "unlink" ? "deleted" : change.event === "change" ? "changed" : "added";
+      const size =
+        change.size === null || change.size === undefined ? "" : ` (${change.size} bytes)`;
+      return `- Binary file ${verb}: ${change.relPath}${size}`;
+    });
+  if (binaryEvents.length > 0) sections.push(`Binary file events:\n${binaryEvents.join("\n")}`);
+  if (sections.length === 0) return "";
+
   const fileCount = changes.length;
-  const fileList = changes.map((c) => c.relPath).join(", ");
-  return `The following ${fileCount} file${fileCount > 1 ? "s" : ""} changed: ${fileList}\n\n${diff}`;
+  const fileList = changes.map((change) => change.relPath).join(", ");
+  return `The following ${fileCount} file${fileCount > 1 ? "s" : ""} changed: ${fileList}\n\n${sections.join("\n\n")}`;
 }

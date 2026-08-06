@@ -1,9 +1,12 @@
+import { createHash } from "node:crypto";
 import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
 /* ──────────────────────────── Schema ────────────────────────────── */
+
+export type FileKind = "text" | "binary";
 
 const fileSnapshotSchema = z.object({
   /** Project-relative path with forward slashes. */
@@ -12,8 +15,10 @@ const fileSnapshotSchema = z.object({
   hash: z.string().nullable(),
   /** Size in bytes at last snapshot, or null for deleted files. */
   size: z.number().int().nullable(),
-  /** Last delivered text. Required to produce a true incremental diff after restart. */
+  /** Last delivered text. Binary bytes are never persisted. */
   content: z.string().nullable(),
+  /** Old state files contain text snapshots only. */
+  kind: z.enum(["text", "binary"]).default("text"),
   /** ISO timestamp of last snapshot update. */
   updatedAt: z.string(),
 });
@@ -34,6 +39,8 @@ export const stateSchema = z.object({
   namedConversations: z.record(z.string(), z.string()).optional(),
   /** File snapshots keyed by project-relative path. */
   snapshots: z.record(z.string(), fileSnapshotSchema).default({}),
+  /** Missing in state written before metadata-only binary events existed. */
+  binaryBaselineEstablished: z.boolean().optional(),
 });
 
 export type FileSnapshot = z.infer<typeof fileSnapshotSchema>;
@@ -41,15 +48,14 @@ export type HypervigilantState = z.infer<typeof stateSchema>;
 
 /* ────────────────────────── Utilities ────────────────────────────── */
 
-/** Compute SHA-256 hash of a string using Web Crypto. */
+/** Compute a SHA-256 hash without retaining the input. */
+export function hashBytes(content: Uint8Array): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+/** Compute the SHA-256 hash of UTF-8 text. */
 export async function hashContent(content: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(content);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  const hashArray = new Uint8Array(hashBuffer);
-  return Array.from(hashArray)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return hashBytes(new TextEncoder().encode(content));
 }
 
 /** Normalize a filesystem path to a project-relative forward-slash path. */
@@ -192,6 +198,7 @@ export function setSnapshot(
   hash: string | null,
   size: number | null,
   content: string | null,
+  kind: FileKind = "text",
 ): HypervigilantState {
   return {
     ...state,
@@ -202,6 +209,7 @@ export function setSnapshot(
         hash,
         size,
         content,
+        kind,
         updatedAt: new Date().toISOString(),
       },
     },

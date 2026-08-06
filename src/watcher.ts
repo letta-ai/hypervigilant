@@ -4,8 +4,8 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { watch as chokidarWatch, type FSWatcher } from "chokidar";
 import type { GlobMatcher, HypervigilantConfig } from "./config.ts";
 import { createGlobMatcher } from "./config.ts";
-import type { FileSnapshot } from "./state.ts";
-import { hashContent, toRelPath } from "./state.ts";
+import type { FileKind, FileSnapshot } from "./state.ts";
+import { hashBytes, toRelPath } from "./state.ts";
 
 export type WatchEvent = "add" | "change" | "unlink";
 
@@ -13,6 +13,7 @@ export interface FileChange {
   relPath: string;
   absPath: string;
   event: WatchEvent;
+  kind: FileKind;
   oldContent: string | null;
   newContent: string | null;
   hash: string | null;
@@ -21,6 +22,14 @@ export interface FileChange {
 
 export type FileChangeCallback = (change: FileChange) => void | Promise<void>;
 
+function bytesLookLikeText(content: Uint8Array): boolean {
+  const sampleLength = Math.min(content.byteLength, 8192);
+  for (let index = 0; index < sampleLength; index += 1) {
+    if (content[index] === 0) return false;
+  }
+  return true;
+}
+
 /** Reject obvious binary content without guessing from the file extension. */
 export async function isTextFile(absPath: string): Promise<boolean> {
   let handle: FileHandle | undefined;
@@ -28,10 +37,7 @@ export async function isTextFile(absPath: string): Promise<boolean> {
     handle = await open(absPath, "r");
     const buffer = new Uint8Array(8192);
     const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    for (let index = 0; index < bytesRead; index += 1) {
-      if (buffer[index] === 0) return false;
-    }
-    return true;
+    return bytesLookLikeText(buffer.subarray(0, bytesRead));
   } catch {
     return false;
   } finally {
@@ -57,6 +63,45 @@ export async function readFileContent(absPath: string): Promise<string | null> {
     return await readFile(absPath, "utf8");
   } catch {
     return null;
+  }
+}
+
+export interface InspectedFile {
+  kind: FileKind;
+  hash: string;
+  size: number;
+  content: string | null;
+}
+
+/** Read one bounded file once. Binary bytes are hashed, then discarded. */
+export async function inspectFile(absPath: string, maxSize: number): Promise<InspectedFile | null> {
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(absPath, "r");
+    const file = await handle.stat();
+    if (!file.isFile() || file.size > maxSize) return null;
+
+    const buffer = Buffer.alloc(file.size + 1);
+    let offset = 0;
+    while (offset < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, offset, buffer.length - offset, offset);
+      if (bytesRead === 0) break;
+      offset += bytesRead;
+    }
+    if (offset > file.size) return null;
+
+    const bytes = buffer.subarray(0, offset);
+    const kind: FileKind = bytesLookLikeText(bytes) ? "text" : "binary";
+    return {
+      kind,
+      hash: hashBytes(bytes),
+      size: bytes.byteLength,
+      content: kind === "text" ? bytes.toString("utf8") : null,
+    };
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => {});
   }
 }
 
@@ -121,31 +166,30 @@ export async function detectOfflineChanges(
   for (const absPath of await walkProject(root, matcher, config)) {
     const relPath = toRelPath(root, absPath);
     currentPaths.add(relPath);
-    const sizeCheck = await checkFileSize(absPath, config.maxFileSizeBytes);
-    if (!sizeCheck.ok || !(await isTextFile(absPath))) continue;
-    const newContent = await readFileContent(absPath);
-    if (newContent === null) continue;
-    const hash = await hashContent(newContent);
+    const inspected = await inspectFile(absPath, config.maxFileSizeBytes);
+    if (!inspected) continue;
     const snapshot = snapshots[relPath];
     if (!snapshot) {
       changes.push({
         relPath,
         absPath,
         event: "add",
+        kind: inspected.kind,
         oldContent: null,
-        newContent,
-        hash,
-        size: sizeCheck.size,
+        newContent: inspected.content,
+        hash: inspected.hash,
+        size: inspected.size,
       });
-    } else if (snapshot.hash !== hash) {
+    } else if (snapshot.hash !== inspected.hash || snapshot.kind !== inspected.kind) {
       changes.push({
         relPath,
         absPath,
         event: "change",
+        kind: inspected.kind,
         oldContent: snapshot.content,
-        newContent,
-        hash,
-        size: sizeCheck.size,
+        newContent: inspected.content,
+        hash: inspected.hash,
+        size: inspected.size,
       });
     }
   }
@@ -156,6 +200,7 @@ export async function detectOfflineChanges(
       relPath,
       absPath: join(root, ...relPath.split("/")),
       event: "unlink",
+      kind: snapshot.kind,
       oldContent: snapshot.content,
       newContent: null,
       hash: null,
@@ -170,7 +215,7 @@ export interface WatcherOptions {
   projectRoot: string;
   config: HypervigilantConfig;
   onChange: FileChangeCallback;
-  getPreviousContent?: (relPath: string) => string | null;
+  getPreviousSnapshot?: (relPath: string) => FileSnapshot | undefined;
   isSuppressed?: (relPath: string) => boolean;
   onSuppressedChange?: FileChangeCallback;
   onError?: (error: Error) => void;
@@ -219,26 +264,28 @@ export class FileWatcher {
       const relPath = toRelPath(root, absPath);
       if (!this.matcher.matches(relPath)) return;
 
-      let size: number | null = null;
-      if (event !== "unlink") {
-        const sizeCheck = await checkFileSize(absPath, this.opts.config.maxFileSizeBytes);
-        if (!sizeCheck.ok || !(await isTextFile(absPath))) return;
-        size = sizeCheck.size;
+      const previous = this.opts.getPreviousSnapshot?.(relPath);
+      const inspected =
+        event === "unlink" ? null : await inspectFile(absPath, this.opts.config.maxFileSizeBytes);
+      if (event !== "unlink" && !inspected) return;
+      if (event === "unlink" && this.opts.getPreviousSnapshot && !previous) return;
+      if (
+        inspected &&
+        previous &&
+        inspected.hash === previous.hash &&
+        inspected.kind === previous.kind
+      ) {
+        return;
       }
-
-      const newContent = event === "unlink" ? null : await readFileContent(absPath);
-      if (event !== "unlink" && newContent === null) return;
-      const oldContent = this.opts.getPreviousContent?.(relPath) ?? null;
-      if (event !== "unlink" && oldContent === newContent) return;
-      if (event === "unlink" && this.opts.getPreviousContent && oldContent === null) return;
       const change: FileChange = {
         relPath,
         absPath,
         event,
-        oldContent,
-        newContent,
-        hash: newContent === null ? null : await hashContent(newContent),
-        size,
+        kind: inspected?.kind ?? previous?.kind ?? "text",
+        oldContent: previous?.content ?? null,
+        newContent: inspected?.content ?? null,
+        hash: inspected?.hash ?? null,
+        size: inspected?.size ?? null,
       };
 
       if (this.opts.isSuppressed?.(relPath)) {
