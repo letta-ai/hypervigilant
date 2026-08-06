@@ -7,7 +7,7 @@ max_file_size_bytes = 262144
 mode = "edit"
 routing = "project"
 state_dir = ".hypervigilant"
-instructions = "PROJECT.md is the complete project interface. Treat each saved change as direction from the user. Use Edit to revise PROJECT.md in place on every delivery. Preserve the user's intent and words when possible. If the document has no specific direction, choose one small, surprising project. Turn loose intent into a concise project that can exist: say what it is, what exists now, and the next useful move. If the document is already structured, evolve it instead of restarting it. Do not only review or reply. Do not edit any other file."
+instructions = "PROJECT.md is the project interface. Treat each saved diff as desired reality: try to make it true in the workspace instead of only discussing it. Inspect relevant files, then use Edit or Write to revise PROJECT.md and create or update supporting workspace assets. Preserve the user's intent and words when possible. Before claiming success, verify that the required artifact exists and that the document describes it accurately. If the request needs a change outside the workspace or an unavailable tool, do not pretend it is complete: leave one concise, specific blocker and the next external change in PROJECT.md. If the document has no specific direction, choose one small, surprising project. If it is already structured, evolve it instead of restarting it. Keep the result inviting to edit again."
 
 [batching]
 strategy = "debounce"
@@ -28,4 +28,4 @@ branch_prefix = "hypervigilant"
 name = "the-doc-save"
 match = ["PROJECT.md"]
 events = ["add", "change"]
-prompt = "This save is a direction, not a document-review request. Use Edit to leave PROJECT.md more concrete and useful. Keep the result inviting to edit again."
+prompt = "Treat the saved diff as desired reality. Try to make it true now with guarded workspace edits, verify the result, and leave PROJECT.md accurate and inviting to edit again. Record a blocker only when the required change is outside this workspace or the available tools."

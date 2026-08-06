@@ -62,6 +62,17 @@ describe("The Doc server", () => {
     );
   });
 
+  it("guides the agent to make each saved diff true", async () => {
+    const config = await Bun.file(
+      join(import.meta.dir, "..", "hypervigilant.toml.example"),
+    ).text();
+    expect(config).toContain("Treat each saved diff as desired reality");
+    expect(config).toContain("use Edit or Write");
+    expect(config).toContain("Before claiming success, verify");
+    expect(config).toContain("outside the workspace or an unavailable tool");
+    expect(config).not.toContain("Do not edit any other file");
+  });
+
   it("reads and saves the fixed Markdown document", async () => {
     const current = await fetch(`${server?.url}/api/document`).then((response) => response.json());
     expect(current).toEqual({
