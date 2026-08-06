@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync } from "node:fs";
-import { mkdir, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LettaAgentClient } from "@letta-ai/letta-agent-sdk";
 import { type Batcher, createBatcher } from "../src/batcher.ts";
@@ -50,11 +51,10 @@ async function rmrf(path: string): Promise<void> {
 }
 
 describe("integration", () => {
-  const testRoot = join(import.meta.dirname, "tmp-integration");
+  let testRoot: string;
 
   beforeEach(async () => {
-    await rmrf(testRoot);
-    mkdirSync(testRoot, { recursive: true });
+    testRoot = await mkdtemp(join(tmpdir(), "hypervigilant-integration-"));
   });
 
   afterEach(async () => {
@@ -536,6 +536,7 @@ describe("integration", () => {
       const watcher = new FileWatcher({
         projectRoot: testRoot,
         config,
+        getPreviousContent: () => "original",
         onChange: (change) => batcher.add(change),
       });
 
@@ -553,6 +554,7 @@ describe("integration", () => {
       const change = delivered.find((c) => c.relPath === "file.md");
       expect(change).toBeDefined();
       expect(change?.event).toBe("change");
+      expect(change?.oldContent).toBe("original");
       expect(change?.newContent).toBe("modified content");
     });
 

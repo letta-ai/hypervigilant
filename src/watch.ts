@@ -357,14 +357,21 @@ function hydrateChanges(changes: FileChange[], state: HypervigilantState): FileC
       const snapshot = state.snapshots[change.relPath];
       if (change.hash === null) return Boolean(snapshot);
       if (!snapshot) return true;
-      return snapshot.hash !== change.hash || snapshot.kind !== change.kind;
+      return snapshot.hash !== change.hash || (snapshot.kind ?? "text") !== (change.kind ?? "text");
     });
 }
 
 function applyDeliveredChange(state: HypervigilantState, change: FileChange): HypervigilantState {
   return change.hash === null
     ? removeSnapshot(state, change.relPath)
-    : setSnapshot(state, change.relPath, change.hash, change.size, change.newContent, change.kind);
+    : setSnapshot(
+        state,
+        change.relPath,
+        change.hash,
+        change.size,
+        change.newContent,
+        change.kind ?? "text",
+      );
 }
 
 export async function establishBinaryBaseline(

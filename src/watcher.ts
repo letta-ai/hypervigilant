@@ -13,7 +13,8 @@ export interface FileChange {
   relPath: string;
   absPath: string;
   event: WatchEvent;
-  kind: FileKind;
+  /** Missing means text for compatibility with text-only callers. */
+  kind?: FileKind;
   oldContent: string | null;
   newContent: string | null;
   hash: string | null;
@@ -180,7 +181,7 @@ export async function detectOfflineChanges(
         hash: inspected.hash,
         size: inspected.size,
       });
-    } else if (snapshot.hash !== inspected.hash || snapshot.kind !== inspected.kind) {
+    } else if (snapshot.hash !== inspected.hash || (snapshot.kind ?? "text") !== inspected.kind) {
       changes.push({
         relPath,
         absPath,
@@ -200,7 +201,7 @@ export async function detectOfflineChanges(
       relPath,
       absPath: join(root, ...relPath.split("/")),
       event: "unlink",
-      kind: snapshot.kind,
+      kind: snapshot.kind ?? "text",
       oldContent: snapshot.content,
       newContent: null,
       hash: null,
@@ -215,6 +216,8 @@ export interface WatcherOptions {
   projectRoot: string;
   config: HypervigilantConfig;
   onChange: FileChangeCallback;
+  /** Legacy text-only callback. Prefer getPreviousSnapshot for binary files. */
+  getPreviousContent?: (relPath: string) => string | null;
   getPreviousSnapshot?: (relPath: string) => FileSnapshot | undefined;
   isSuppressed?: (relPath: string) => boolean;
   onSuppressedChange?: FileChangeCallback;
@@ -265,15 +268,27 @@ export class FileWatcher {
       if (!this.matcher.matches(relPath)) return;
 
       const previous = this.opts.getPreviousSnapshot?.(relPath);
+      const previousContent = previous?.content ?? this.opts.getPreviousContent?.(relPath) ?? null;
+      const previousKind = previous?.kind ?? "text";
       const inspected =
         event === "unlink" ? null : await inspectFile(absPath, this.opts.config.maxFileSizeBytes);
       if (event !== "unlink" && !inspected) return;
       if (event === "unlink" && this.opts.getPreviousSnapshot && !previous) return;
       if (
+        event === "unlink" &&
+        !this.opts.getPreviousSnapshot &&
+        this.opts.getPreviousContent &&
+        previousContent === null
+      ) {
+        return;
+      }
+      if (
         inspected &&
-        previous &&
-        inspected.hash === previous.hash &&
-        inspected.kind === previous.kind
+        ((previous && inspected.hash === previous.hash && inspected.kind === previousKind) ||
+          (!previous &&
+            this.opts.getPreviousContent &&
+            inspected.kind === "text" &&
+            inspected.content === previousContent))
       ) {
         return;
       }
@@ -281,8 +296,8 @@ export class FileWatcher {
         relPath,
         absPath,
         event,
-        kind: inspected?.kind ?? previous?.kind ?? "text",
-        oldContent: previous?.content ?? null,
+        kind: inspected?.kind ?? previousKind,
+        oldContent: previousContent,
         newContent: inspected?.content ?? null,
         hash: inspected?.hash ?? null,
         size: inspected?.size ?? null,

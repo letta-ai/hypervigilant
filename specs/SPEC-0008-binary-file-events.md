@@ -35,6 +35,7 @@ Let configured agents react when matching images and other binary files arrive, 
 - [x] Binary snapshots never persist file bytes.
 - [x] Existing binary files enter the first or upgrade baseline without dispatch.
 - [x] Legacy text snapshots load as text.
+- [x] Existing text-only `FileChange` values and `getPreviousContent` callbacks remain valid.
 - [x] Exclusions, symbolic-link rules, and size limits still apply.
 - [x] `ViewImage` is available only when the config explicitly grants it.
 - [x] The README includes a small image-inbox config and states that file moves need a separate guarded tool.

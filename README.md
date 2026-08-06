@@ -98,6 +98,8 @@ auto_allow = ["ViewImage"]
 
 Start the watcher before you add images. The first run records existing files without sending them. Use `hypervigilant permissions yolo /path/to/image-inbox` if catalog writes must run without approval.
 
+`auto_allow` gives `ViewImage` its native path access. Use `ask = ["ViewImage"]` instead if each image read needs approval.
+
 Hypervigilant reports image events but does not move files. File moves need a separate guarded client tool or an attached Letta tool.
 
 ### Watch an Obsidian vault

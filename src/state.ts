@@ -43,8 +43,11 @@ export const stateSchema = z.object({
   binaryBaselineEstablished: z.boolean().optional(),
 });
 
-export type FileSnapshot = z.infer<typeof fileSnapshotSchema>;
-export type HypervigilantState = z.infer<typeof stateSchema>;
+export type FileSnapshot = z.input<typeof fileSnapshotSchema>;
+type ParsedState = z.infer<typeof stateSchema>;
+export type HypervigilantState = Omit<ParsedState, "snapshots"> & {
+  snapshots: Record<string, FileSnapshot>;
+};
 
 /* ────────────────────────── Utilities ────────────────────────────── */
 
