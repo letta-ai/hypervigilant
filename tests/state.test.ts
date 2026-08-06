@@ -179,6 +179,7 @@ describe("state", () => {
             hash: "abc123",
             size: 100,
             content: "saved text",
+            kind: "text",
             updatedAt: "2025-01-01T00:00:00.000Z",
           },
         },
@@ -245,6 +246,23 @@ describe("state", () => {
       }
     });
 
+    it("treats legacy snapshots as text", () => {
+      const result = stateSchema.parse({
+        version: 1,
+        agentId: "agent-xxx",
+        snapshots: {
+          "legacy.md": {
+            path: "legacy.md",
+            hash: "abc",
+            size: 3,
+            content: "old",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+          },
+        },
+      });
+      expect(result.snapshots["legacy.md"]?.kind).toBe("text");
+    });
+
     it("should parse persisted named conversation mappings", () => {
       const result = stateSchema.safeParse({
         version: 1,
@@ -272,6 +290,17 @@ describe("state", () => {
       expect(state.snapshots["file.md"]?.hash).toBe("hash123");
       expect(state.snapshots["file.md"]?.size).toBe(100);
       expect(state.snapshots["file.md"]?.content).toBe("saved text");
+      expect(state.snapshots["file.md"]?.kind).toBe("text");
+    });
+
+    it("stores binary metadata without bytes", () => {
+      const state = setSnapshot(baseState, "image.png", "binary-hash", 2048, null, "binary");
+      expect(state.snapshots["image.png"]).toMatchObject({
+        hash: "binary-hash",
+        size: 2048,
+        content: null,
+        kind: "binary",
+      });
     });
 
     it("removeSnapshot should remove a snapshot", () => {

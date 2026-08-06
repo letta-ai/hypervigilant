@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type {
   CanUseToolContext,
@@ -16,7 +15,6 @@ import {
 import { getPermissionStatus, type PermissionPolicy, permissionAgentMode } from "./permissions.ts";
 import {
   type HypervigilantState,
-  hashContent,
   removeSnapshot,
   resetConversationRoutes,
   StateStore,
@@ -24,12 +22,10 @@ import {
   toRelPath,
 } from "./state.ts";
 import {
-  checkFileSize,
   detectOfflineChanges,
   type FileChange,
   FileWatcher,
-  isTextFile,
-  readFileContent,
+  inspectFile,
   walkProject,
 } from "./watcher.ts";
 import {
@@ -132,6 +128,11 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
   } else {
     state = loadedState;
   }
+  if (state.binaryBaselineEstablished !== true) {
+    state = await establishBinaryBaseline(projectRoot, config, state);
+    await store.save(state);
+    opts.onStatus?.("Binary baseline established. Existing binary files were not sent.");
+  }
 
   const offlineChanges = await detectOfflineChanges(projectRoot, config, state.snapshots);
   if (offlineChanges.length > 0) {
@@ -142,16 +143,17 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
   const suppressions = new MutationSuppressions();
   const persistCurrentFile = async (relPath: string): Promise<void> => {
     const absPath = join(projectRoot, ...relPath.split("/"));
-    const content = await readFileContent(absPath);
-    if (content === null) {
+    const inspected = await inspectFile(absPath, config.maxFileSizeBytes);
+    if (!inspected) {
       state = removeSnapshot(state, relPath);
     } else {
       state = setSnapshot(
         state,
         relPath,
-        await hashContent(content),
-        Buffer.byteLength(content),
-        content,
+        inspected.hash,
+        inspected.size,
+        inspected.content,
+        inspected.kind,
       );
     }
     await store.save(state);
@@ -211,17 +213,17 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
         }
         for (const relPath of suppressions.activePaths()) {
           const absPath = join(projectRoot, ...relPath.split("/"));
-          const content = await readFileContent(absPath);
-          state =
-            content === null
-              ? removeSnapshot(state, relPath)
-              : setSnapshot(
-                  state,
-                  relPath,
-                  await hashContent(content),
-                  Buffer.byteLength(content),
-                  content,
-                );
+          const inspected = await inspectFile(absPath, config.maxFileSizeBytes);
+          state = inspected
+            ? setSnapshot(
+                state,
+                relPath,
+                inspected.hash,
+                inspected.size,
+                inspected.content,
+                inspected.kind,
+              )
+            : removeSnapshot(state, relPath);
         }
         await store.save(state);
         opts.onAssistantText?.("\n");
@@ -271,7 +273,7 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
   const watcher = new FileWatcher({
     projectRoot,
     config,
-    getPreviousContent: (relPath) => state.snapshots[relPath]?.content ?? null,
+    getPreviousSnapshot: (relPath) => state.snapshots[relPath],
     isSuppressed: (relPath) => suppressions.has(relPath),
     onSuppressedChange: (change) => {
       void turnSerializer
@@ -346,18 +348,47 @@ export function formatDeliveryStatus(changes: Array<Pick<FileChange, "relPath">>
 function hydrateChanges(changes: FileChange[], state: HypervigilantState): FileChange[] {
   return changes
     .map((change) => {
-      const oldContent = state.snapshots[change.relPath]?.content ?? null;
+      const snapshot = state.snapshots[change.relPath];
       const event: FileChange["event"] =
-        change.newContent === null ? "unlink" : oldContent === null ? "add" : "change";
-      return { ...change, oldContent, event };
+        change.hash === null ? "unlink" : snapshot ? "change" : "add";
+      return { ...change, oldContent: snapshot?.content ?? null, event };
     })
-    .filter((change) => change.oldContent !== change.newContent);
+    .filter((change) => {
+      const snapshot = state.snapshots[change.relPath];
+      if (change.hash === null) return Boolean(snapshot);
+      if (!snapshot) return true;
+      return snapshot.hash !== change.hash || (snapshot.kind ?? "text") !== (change.kind ?? "text");
+    });
 }
 
 function applyDeliveredChange(state: HypervigilantState, change: FileChange): HypervigilantState {
-  return change.newContent === null
+  return change.hash === null
     ? removeSnapshot(state, change.relPath)
-    : setSnapshot(state, change.relPath, change.hash, change.size, change.newContent);
+    : setSnapshot(
+        state,
+        change.relPath,
+        change.hash,
+        change.size,
+        change.newContent,
+        change.kind ?? "text",
+      );
+}
+
+export async function establishBinaryBaseline(
+  projectRoot: string,
+  config: HypervigilantConfig,
+  state: HypervigilantState,
+): Promise<HypervigilantState> {
+  let nextState = state;
+  const matcher = createGlobMatcher(config);
+  for (const absPath of await walkProject(projectRoot, matcher, config)) {
+    const relPath = toRelPath(projectRoot, absPath);
+    if (nextState.snapshots[relPath]) continue;
+    const inspected = await inspectFile(absPath, config.maxFileSizeBytes);
+    if (inspected?.kind !== "binary") continue;
+    nextState = setSnapshot(nextState, relPath, inspected.hash, inspected.size, null, "binary");
+  }
+  return { ...nextState, binaryBaselineEstablished: true };
 }
 
 export async function establishBaseline(
@@ -371,19 +402,20 @@ export async function establishBaseline(
     fileConversations: {},
     namedConversations: {},
     snapshots: {},
+    binaryBaselineEstablished: true,
   };
   const matcher = createGlobMatcher(config);
   for (const absPath of await walkProject(projectRoot, matcher, config)) {
     try {
-      const sizeCheck = await checkFileSize(absPath, config.maxFileSizeBytes);
-      if (!sizeCheck.ok || !(await isTextFile(absPath))) continue;
-      const content = await readFile(absPath, "utf8");
+      const inspected = await inspectFile(absPath, config.maxFileSizeBytes);
+      if (!inspected) continue;
       state = setSnapshot(
         state,
         toRelPath(projectRoot, absPath),
-        await hashContent(content),
-        sizeCheck.size,
-        content,
+        inspected.hash,
+        inspected.size,
+        inspected.content,
+        inspected.kind,
       );
     } catch {
       // An unreadable file is not part of the baseline.

@@ -18,6 +18,7 @@ function makeChange(
     relPath,
     absPath: `/project/${relPath}`,
     event,
+    kind: "text",
     oldContent: null,
     newContent: event === "unlink" ? null : content,
     hash: event === "unlink" ? null : `hash-${content.length}`,

@@ -79,5 +79,45 @@ describe("diff", () => {
       const message = formatDiffMessage(changes);
       expect(message).toContain("2 files changed");
     });
+
+    it("describes binary events without embedding bytes or a fake text diff", () => {
+      const message = formatDiffMessage([
+        {
+          relPath: "inbox/photo.png",
+          kind: "binary",
+          event: "add",
+          size: 2048,
+          oldContent: null,
+          newContent: null,
+        },
+        {
+          relPath: "inbox/old.jpg",
+          kind: "binary",
+          event: "unlink",
+          size: null,
+          oldContent: null,
+          newContent: null,
+        },
+      ]);
+      expect(message).toContain("Binary file added: inbox/photo.png (2048 bytes)");
+      expect(message).toContain("Binary file deleted: inbox/old.jpg");
+      expect(message).not.toContain("Index:");
+    });
+
+    it("keeps text diffs and binary metadata in a mixed batch", () => {
+      const message = formatDiffMessage([
+        { relPath: "notes.md", oldContent: "old", newContent: "new" },
+        {
+          relPath: "photo.png",
+          kind: "binary",
+          event: "change",
+          size: 4096,
+          oldContent: null,
+          newContent: null,
+        },
+      ]);
+      expect(message).toContain("Index: notes.md");
+      expect(message).toContain("Binary file changed: photo.png (4096 bytes)");
+    });
   });
 });

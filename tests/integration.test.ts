@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LettaAgentClient } from "@letta-ai/letta-agent-sdk";
@@ -14,7 +14,12 @@ import {
   setSnapshot,
   toRelPath,
 } from "../src/state.ts";
-import { establishBaseline, formatDeliveryStatus, watchCommand } from "../src/watch.ts";
+import {
+  establishBaseline,
+  establishBinaryBaseline,
+  formatDeliveryStatus,
+  watchCommand,
+} from "../src/watch.ts";
 import {
   checkFileSize,
   detectOfflineChanges,
@@ -193,14 +198,50 @@ describe("integration", () => {
   });
 
   describe("baseline safeguards", () => {
-    it("does not persist binary or oversized files matched by broad globs", async () => {
+    it("stores binary metadata without bytes and skips oversized files", async () => {
       const config = makeConfig({ include: ["**/*"], maxFileSizeBytes: 20 });
       await writeFile(join(testRoot, "safe.txt"), "safe", "utf8");
       await writeFile(join(testRoot, "large.txt"), "x".repeat(21), "utf8");
       await writeFile(join(testRoot, "binary.bin"), Buffer.from([0x41, 0x00, 0x42]));
       const state = await establishBaseline(testRoot, config);
-      expect(Object.keys(state.snapshots)).toEqual(["safe.txt"]);
+      expect(Object.keys(state.snapshots).sort()).toEqual(["binary.bin", "safe.txt"]);
       expect(state.snapshots["safe.txt"]?.content).toBe("safe");
+      expect(state.snapshots["binary.bin"]).toMatchObject({
+        kind: "binary",
+        size: 3,
+        content: null,
+      });
+      expect(state.snapshots["binary.bin"]?.hash).toHaveLength(64);
+      expect(state.binaryBaselineEstablished).toBe(true);
+    });
+
+    it("does not follow matching binary symlinks", async () => {
+      const config = makeConfig({ include: ["**/*.png"] });
+      await writeFile(join(testRoot, "target.data"), Buffer.from([0x41, 0x00, 0x42]));
+      await symlink("target.data", join(testRoot, "linked.png"));
+
+      const state = await establishBaseline(testRoot, config);
+      expect(state.snapshots).toEqual({});
+    });
+
+    it("baselines existing binary files once when old state is upgraded", async () => {
+      const config = makeConfig({ include: ["**/*.png"] });
+      await writeFile(
+        join(testRoot, "existing.png"),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]),
+      );
+      const oldState: HypervigilantState = {
+        version: 1,
+        agentId: "agent-test",
+        projectConversation: { conversationId: null },
+        fileConversations: {},
+        snapshots: {},
+      };
+
+      const upgraded = await establishBinaryBaseline(testRoot, config, oldState);
+      expect(upgraded.binaryBaselineEstablished).toBe(true);
+      expect(upgraded.snapshots["existing.png"]?.kind).toBe("binary");
+      expect(await detectOfflineChanges(testRoot, config, upgraded.snapshots)).toEqual([]);
     });
   });
 
@@ -260,6 +301,46 @@ describe("integration", () => {
       expect(changes[0]?.newContent).toBe("modified");
     });
 
+    it("detects changed binary files while stopped without retaining bytes", async () => {
+      const config = makeConfig({ include: ["**/*.png"] });
+      const imagePath = join(testRoot, "photo.png");
+      await writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]));
+      const state = await establishBaseline(testRoot, config);
+
+      await writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x02]));
+      const changes = await detectOfflineChanges(testRoot, config, state.snapshots);
+
+      expect(changes).toHaveLength(1);
+      expect(changes[0]).toMatchObject({
+        relPath: "photo.png",
+        event: "change",
+        kind: "binary",
+        oldContent: null,
+        newContent: null,
+        size: 6,
+      });
+      expect(changes[0]?.hash).not.toBe(state.snapshots["photo.png"]?.hash);
+    });
+
+    it("detects deleted binary files while stopped", async () => {
+      const config = makeConfig({ include: ["**/*.png"] });
+      const imagePath = join(testRoot, "photo.png");
+      await writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]));
+      const state = await establishBaseline(testRoot, config);
+
+      await unlink(imagePath);
+      const changes = await detectOfflineChanges(testRoot, config, state.snapshots);
+
+      expect(changes).toHaveLength(1);
+      expect(changes[0]).toMatchObject({
+        relPath: "photo.png",
+        event: "unlink",
+        kind: "binary",
+        oldContent: null,
+        newContent: null,
+      });
+    });
+
     it("should detect deleted files while stopped", async () => {
       const config = makeConfig();
       const store = new StateStore({
@@ -306,6 +387,7 @@ describe("integration", () => {
           hash: hash1,
           size: "content".length,
           content: "content",
+          kind: "text" as const,
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
       };
@@ -355,6 +437,73 @@ describe("integration", () => {
       expect(newFileChange?.newContent).toBe("new content");
     });
 
+    it("delivers binary arrivals as metadata-only changes", async () => {
+      const config = makeConfig({ include: ["**/*.png"] });
+      const delivered: FileChange[] = [];
+      const batcher = createBatcher(config, (changes) => {
+        delivered.push(...changes);
+      });
+      const watcher = new FileWatcher({
+        projectRoot: testRoot,
+        config,
+        onChange: (change) => batcher.add(change),
+      });
+      await new Promise<void>((resolve) => void watcher.start(resolve));
+      await sleep(50);
+
+      await writeFile(
+        join(testRoot, "photo.png"),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]),
+      );
+      expect(await waitFor(() => delivered.length === 1)).toBe(true);
+      await watcher.stop();
+      await batcher.close();
+
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]).toMatchObject({
+        relPath: "photo.png",
+        event: "add",
+        kind: "binary",
+        oldContent: null,
+        newContent: null,
+        size: 6,
+      });
+      expect(delivered[0]?.hash).toHaveLength(64);
+    });
+
+    it("delivers live binary changes and deletions from snapshot metadata", async () => {
+      const config = makeConfig({ include: ["**/*.png"] });
+      const imagePath = join(testRoot, "photo.png");
+      await writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]));
+      const state = await establishBaseline(testRoot, config);
+      const delivered: FileChange[] = [];
+      const batcher = createBatcher(config, (changes) => {
+        delivered.push(...changes);
+      });
+      const watcher = new FileWatcher({
+        projectRoot: testRoot,
+        config,
+        getPreviousSnapshot: (relPath) => state.snapshots[relPath],
+        onChange: (change) => batcher.add(change),
+      });
+      await new Promise<void>((resolve) => void watcher.start(resolve));
+      await sleep(50);
+
+      await writeFile(imagePath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x02]));
+      expect(await waitFor(() => delivered.length === 1)).toBe(true);
+      await unlink(imagePath);
+      expect(await waitFor(() => delivered.length === 2)).toBe(true);
+      await watcher.stop();
+      await batcher.close();
+
+      expect(delivered.map((change) => [change.event, change.kind])).toEqual([
+        ["change", "binary"],
+        ["unlink", "binary"],
+      ]);
+      expect(delivered.every((change) => change.oldContent === null)).toBe(true);
+      expect(delivered.every((change) => change.newContent === null)).toBe(true);
+    });
+
     it("should watch matching files in nested directories", async () => {
       const config = makeConfig();
       const delivered: FileChange[] = [];
@@ -387,6 +536,7 @@ describe("integration", () => {
       const watcher = new FileWatcher({
         projectRoot: testRoot,
         config,
+        getPreviousContent: () => "original",
         onChange: (change) => batcher.add(change),
       });
 
@@ -404,6 +554,7 @@ describe("integration", () => {
       const change = delivered.find((c) => c.relPath === "file.md");
       expect(change).toBeDefined();
       expect(change?.event).toBe("change");
+      expect(change?.oldContent).toBe("original");
       expect(change?.newContent).toBe("modified content");
     });
 
@@ -514,9 +665,10 @@ describe("integration", () => {
       expect(change).toBeUndefined();
     });
 
-    it("should ignore binary files", async () => {
+    it("should ignore oversized binary files", async () => {
       const config = makeConfig({
         include: ["**/*.bin", ...makeConfig().include],
+        maxFileSizeBytes: 50,
       });
 
       const delivered: FileChange[] = [];
@@ -538,7 +690,7 @@ describe("integration", () => {
       const buffer = Buffer.alloc(100, 0);
       buffer[0] = 0x42;
       await writeFile(join(testRoot, "binary.bin"), buffer);
-      await sleep(200);
+      await sleep(600);
 
       await watcher.stop();
       await batcher.close();
@@ -564,6 +716,7 @@ describe("integration", () => {
             hash: "abc",
             size: 10,
             content: "saved text",
+            kind: "text",
             updatedAt: "2025-01-01T00:00:00.000Z",
           },
         },
