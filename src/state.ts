@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, realpathSync } from "node:fs";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 
@@ -109,9 +109,13 @@ export function toSafeRelPath(projectRoot: string, inputPath: string): string | 
 export async function atomicWriteFile(filePath: string, content: string): Promise<void> {
   const dir = dirname(filePath);
   await mkdir(dir, { recursive: true });
-  const tmpPath = `${filePath}.${process.pid}.tmp`;
-  await writeFile(tmpPath, content, "utf8");
-  await rename(tmpPath, filePath);
+  const tmpPath = `${filePath}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    await writeFile(tmpPath, content, "utf8");
+    await rename(tmpPath, filePath);
+  } finally {
+    await rm(tmpPath, { force: true });
+  }
 }
 
 /**

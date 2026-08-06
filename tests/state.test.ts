@@ -115,6 +115,18 @@ describe("state", () => {
       await atomicWriteFile(filePath, "hello");
       expect(existsSync(filePath)).toBe(true);
     });
+
+    it("should isolate concurrent writes to the same path", async () => {
+      const filePath = join(testDir, "shared.txt");
+      await Promise.all([
+        atomicWriteFile(filePath, "first"),
+        atomicWriteFile(filePath, "second"),
+        atomicWriteFile(filePath, "third"),
+      ]);
+      const { readFile, readdir } = await import("node:fs/promises");
+      expect(["first", "second", "third"]).toContain(await readFile(filePath, "utf8"));
+      expect(await readdir(testDir)).toEqual(["shared.txt"]);
+    });
   });
 
   describe("atomicWriteJSON", () => {

@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { ActivityFeed } from "../activity.ts";
 import {
   documentRevision,
+  saveTheDoc,
   type TheDocServer,
   startTheDocServer,
 } from "../server.ts";
@@ -137,6 +138,12 @@ describe("The Doc server", () => {
       revision: documentRevision(fileMarkdown),
     });
     expect(await Bun.file(documentPath).text()).toBe(fileMarkdown);
+  });
+
+  it("rejects oversized input before reading the current document", async () => {
+    await expect(
+      saveTheDoc(join(testRoot, "missing", "PROJECT.md"), "x".repeat(1025), "stale", 1024),
+    ).rejects.toBeInstanceOf(RangeError);
   });
 
   it("rejects invalid and oversized writes", async () => {

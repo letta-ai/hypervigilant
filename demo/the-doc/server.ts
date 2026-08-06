@@ -87,17 +87,17 @@ export async function saveTheDoc(
   expectedRevision: string,
   maxDocumentBytes = DEFAULT_MAX_DOCUMENT_BYTES,
 ): Promise<SaveDocumentResult | { conflict: TheDoc }> {
-  const current = await readTheDoc(documentPath);
-  if (current.revision !== expectedRevision) return { conflict: current };
-  if (normalizedDocumentText(markdown) === normalizedDocumentText(current.markdown)) {
-    return { ...current, changed: false };
-  }
-
   const bytes = Buffer.byteLength(markdown, "utf8");
   if (bytes > maxDocumentBytes) {
     throw new RangeError(`PROJECT.md exceeds the ${maxDocumentBytes}-byte limit.`);
   }
   if (markdown.includes("\0")) throw new TypeError("PROJECT.md must contain text only.");
+
+  const current = await readTheDoc(documentPath);
+  if (current.revision !== expectedRevision) return { conflict: current };
+  if (normalizedDocumentText(markdown) === normalizedDocumentText(current.markdown)) {
+    return { ...current, changed: false };
+  }
 
   await atomicWriteDocument(documentPath, markdown);
   return {
