@@ -32,8 +32,8 @@ Show Hypervigilant through one editable Markdown file. The user writes intent, p
 - The editor has no formatting toolbar. The document is the primary interface.
 - Ctrl+S and Command+S save changed content to `PROJECT.md`.
 - The Hypervigilant watcher dispatches each saved content change to the configured agent.
-- The demo uses direct edit mode and a YOLO runtime override. The watched root contains only `PROJECT.md` plus protected Hypervigilant control files.
-- The agent must preserve the user's intent, revise only `PROJECT.md`, and leave a more useful project document after each save.
+- The demo uses direct edit mode and a YOLO runtime override. Only `PROJECT.md` triggers deliveries; guarded tools can update that document and supporting assets inside the workspace while Hypervigilant control files stay protected.
+- The agent treats each saved diff as desired reality and first tries to make it true with workspace edits. It preserves the user's intent, verifies artifacts before claiming success, and records one specific blocker only when the required change is outside the workspace or its tools.
 - The browser receives external file changes without a page reload.
 - An external change replaces the editor content only when the editor has no unsaved input.
 - If an external change conflicts with unsaved input, the editor keeps both versions and asks the user which version to use.
@@ -64,7 +64,7 @@ Show Hypervigilant through one editable Markdown file. The user writes intent, p
 - [x] External file changes do not overwrite unsaved editor input.
 - [x] The user can choose the local or file version after a conflict.
 - [x] The demo watcher includes only `PROJECT.md` and runs automatic guarded Edit/Write.
-- [x] Agent instructions restrict revisions to The Doc.
+- [x] Agent instructions treat the saved diff as desired reality, permit supporting workspace assets, require verification before success, and use specific blocker text only for unavailable changes.
 - [x] One run command starts the editor and watcher after setup.
 - [x] The server accepts local requests only and enforces file and size boundaries.
 - [x] Automated tests cover document reads, saves, unchanged saves, conflicts, and live notifications.
@@ -94,13 +94,13 @@ Show Hypervigilant through one editable Markdown file. The user writes intent, p
 
 ## Implementation links
 
-- `demo/the-doc/PROJECT.md.example` is the exact canonical starting document. Setup copies it into the ignored one-file workspace without overwriting current work.
+- `demo/the-doc/PROJECT.md.example` is the exact canonical starting document. Setup copies it into the ignored workspace without overwriting the current document or supporting assets.
 - `demo/the-doc/index.html`, `app.js`, and `styles.css` implement the toolbar-free editor, Markdown conversion, relative image parsing and round-trip serialization, keyboard save, live updates, conflict choices, status states, the two-thirds/one-third listener layout, responsive images and stacking, and reduced-motion behavior.
 - `demo/the-doc/activity.ts` implements a generic listener registry, bounded safe event histories, and the Hypervigilant lifecycle parser. It maps known status lines only and drops arbitrary assistant output, tool input, paths, and provider errors.
 - `demo/the-doc/server.ts` serves fixed local assets, the document API, and allowlisted workspace images. It enforces revisions, text and size limits, atomic writes, unchanged-content detection, WebSocket file notifications, traversal and symlink boundaries, image size and type limits, and restrictive response headers without path disclosure.
-- `demo/the-doc/hypervigilant.toml.example` watches only `PROJECT.md` and tells the agent to revise that document after every changed save.
+- `demo/the-doc/hypervigilant.toml.example` watches only `PROJECT.md` and tells the agent to make each saved diff true with verified document and supporting-asset edits, or record one specific blocker when the needed change is unavailable.
 - `demo/the-doc/scripts/setup.ts`, `run.ts`, and `reset.ts` configure the agent, enable guarded YOLO, start and stop the watcher and editor, and restore the exact initial file.
-- `demo/the-doc/tests/activity.test.ts` covers generic listeners, bounded and sanitized histories, safe lifecycle mapping, and rejection of arbitrary output. `server.test.ts` covers reads, writes, unchanged saves, line-ending equivalence, stale revisions, invalid input, size limits, local binding, fixed routes and headers, external file events, listener snapshots and updates, allowlisted workspace images, traversal, hidden paths, malformed encoding, non-image and oversized files, directories, and outside-root symlinks.
+- `demo/the-doc/tests/activity.test.ts` covers generic listeners, bounded and sanitized histories, safe lifecycle mapping, and rejection of arbitrary output. `server.test.ts` covers the make-it-true prompt contract, reads, writes, unchanged saves, line-ending equivalence, stale revisions, invalid input, size limits, local binding, fixed routes and headers, external file events, listener snapshots and updates, allowlisted workspace images, traversal, hidden paths, malformed encoding, non-image and oversized files, directories, and outside-root symlinks.
 - `demo/the-doc/README.md`, the root `README.md`, and `package.json` expose the one-command workflow and package every required asset.
 - Browser acceptance proved formatted editing, Ctrl+S, clean live revision, both unsaved conflict choices, focus styling, the initial reset, the desktop listener gutter, and stacked 390-pixel layout. Image acceptance rendered the existing 200×200 `dog.svg`, rendered an encoded nested image path, preserved that path and alt text through a save, and constrained a forced 1000-pixel image to a 390-pixel viewport. Packaged live acceptance showed Hypervigilant listening before a save, then recorded receiving, two guarded edits, completion, and return to listening while the document updated without reload. The test conversation was archived.
 - All acceptance conversations were archived, and temporary fixture state was removed. The current ignored workspace is user-owned and is never included in the package.
