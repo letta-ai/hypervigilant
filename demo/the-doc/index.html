@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light" />
+    <title>New Project · The Doc</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body data-activity="loading">
+    <main class="workspace" aria-label="The Doc">
+      <section class="document-stage" aria-label="Project document">
+        <div class="document-shell">
+          <div class="revision-line" aria-hidden="true"></div>
+          <article
+            id="editor"
+            class="document"
+            contenteditable="true"
+            spellcheck="true"
+            role="textbox"
+            aria-multiline="true"
+            aria-label="Edit PROJECT.md"
+            aria-describedby="save-hint"
+          ></article>
+        </div>
+      </section>
+
+      <aside class="listener-gutter" aria-labelledby="listeners-title">
+        <header class="listener-header">
+          <p class="listener-eyebrow">Live activity</p>
+          <div class="listener-title-row">
+            <h2 id="listeners-title">Listeners</h2>
+            <span id="listener-count">Connecting</span>
+          </div>
+          <p>Processes that receive each saved diff.</p>
+        </header>
+        <div id="listener-list" class="listener-list" aria-live="polite">
+          <p class="listener-empty">Waiting for the listener feed…</p>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="save-status" aria-live="polite">
+      <span class="status-mark" aria-hidden="true"></span>
+      <span id="status-label">Opening PROJECT.md</span>
+      <span id="save-hint" class="save-hint"><kbd>Ctrl</kbd><span>/</span><kbd>⌘</kbd><kbd>S</kbd></span>
+    </footer>
+
+    <section
+      id="conflict"
+      class="conflict"
+      role="alert"
+      aria-live="assertive"
+      aria-labelledby="conflict-title"
+      hidden
+    >
+      <div>
+        <strong id="conflict-title">PROJECT.md changed while you were typing.</strong>
+        <p>Choose which version stays in the file.</p>
+      </div>
+      <div class="conflict-actions">
+        <button id="use-file" type="button">Use file version</button>
+        <button id="keep-draft" type="button">Keep my draft</button>
+      </div>
+    </section>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

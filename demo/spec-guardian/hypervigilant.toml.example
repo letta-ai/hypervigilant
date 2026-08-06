@@ -1,0 +1,39 @@
+version = 1
+project = "spec-guardian-demo"
+agent_id = "agent-REPLACE-ME"
+include = ["SPEC.md", "src/**/*.ts", "tests/**/*.ts"]
+exclude = ["scripts/**", ".hypervigilant/**", "**/.hypervigilant/**"]
+max_file_size_bytes = 1048576
+mode = "edit"
+routing = "project"
+state_dir = ".hypervigilant"
+instructions = "Treat SPEC.md as the behavior contract. For source or test changes, read SPEC.md and the related files. Report only concrete contract mismatches. Cite the requirement and suggest the smallest repair. In edit mode, apply that repair with Edit after user approval."
+
+[batching]
+strategy = "debounce"
+delay_ms = 300
+max_wait_ms = 2000
+window_ms = 1000
+
+[tools]
+auto_allow = []
+ask = []
+
+[worktree]
+enabled = false
+auto_commit = true
+branch_prefix = "hypervigilant"
+
+[[prompt_rules]]
+name = "spec-change"
+match = ["SPEC.md"]
+events = ["add", "change"]
+prompt = "Treat the changed requirements as the contract. Inspect src and tests, then report concrete mismatches."
+conversation = "spec-review"
+
+[[prompt_rules]]
+name = "implementation-check"
+match = ["src/**/*.ts", "tests/**/*.ts"]
+events = ["add", "change", "delete"]
+prompt = "Read SPEC.md. Report only concrete contract mismatches. Do not modify files."
+conversation = "implementation-review"

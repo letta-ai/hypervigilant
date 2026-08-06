@@ -1,0 +1,34 @@
+# Hypervigilant project configuration.
+version = 1
+project = "my-project"
+agent_id = "agent-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+include = ["**/*.md", "**/*.txt"]
+exclude = ["**/node_modules/**", "**/.git/**", ".hypervigilant/**", "**/.hypervigilant/**"]
+max_file_size_bytes = 1048576
+mode = "edit"
+routing = "project"
+state_dir = ".hypervigilant"
+instructions = "Review each change in project context. Report concrete issues and make only necessary edits."
+
+[batching]
+strategy = "debounce"
+delay_ms = 500
+max_wait_ms = 5000
+window_ms = 2000
+
+# Additional local Agent SDK client tools. File tools are managed separately.
+[tools]
+auto_allow = []
+ask = []
+
+[worktree]
+enabled = false
+auto_commit = true
+branch_prefix = "hypervigilant"
+
+[[prompt_rules]]
+name = "knowledge-review"
+match = ["notes/**", "docs/**"]
+events = ["add", "change", "delete"]
+prompt = "Check for contradictions, stale references, and missing follow-up work."
+conversation = "knowledge-review"

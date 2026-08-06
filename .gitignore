@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.hypervigilant/
+.letta/
+*.tsbuildinfo
+.env
+/hypervigilant.toml
+/test-file.txt
+demo/spec-guardian/hypervigilant.toml
+demo/the-doc/workspace/
