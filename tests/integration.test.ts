@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync } from "node:fs";
-import { mkdir, rm, unlink, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, unlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LettaAgentClient } from "@letta-ai/letta-agent-sdk";
 import { type Batcher, createBatcher } from "../src/batcher.ts";
@@ -45,11 +46,10 @@ async function rmrf(path: string): Promise<void> {
 }
 
 describe("integration", () => {
-  const testRoot = join(import.meta.dirname, "tmp-integration");
+  let testRoot: string;
 
   beforeEach(async () => {
-    await rmrf(testRoot);
-    mkdirSync(testRoot, { recursive: true });
+    testRoot = await mkdtemp(join(tmpdir(), "hypervigilant-integration-"));
   });
 
   afterEach(async () => {
