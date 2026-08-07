@@ -6,8 +6,6 @@ Hypervigilant watches selected local files and sends each saved change to a pers
 
 The agent can review changes, use attached Letta tools, or use guarded local file tools. Conversations and delivered-file state survive watcher restarts.
 
-The current version is `0.1.0`. Configuration and command behavior can change before version `1.0.0`.
-
 ## Quick start
 
 ### Requirements
