@@ -348,6 +348,12 @@ The demo sends each saved change to an agent. Verified agent edits appear in the
 
 [Spec Guardian](demo/spec-guardian/) reviews TypeScript changes against a local `SPEC.md`. It demonstrates prompt rules, named reviewers, approvals, YOLO, and worktree lifecycle commands.
 
+[Obsidian Watcher](demo/obsidian-watcher/) gives one Markdown vault a default maintainer plus persistent connection, claim-boundary, and project-continuity conversations. Its setup creates one dedicated Letta Auto worker and uses path-selective rules so each note wakes only the relevant listeners:
+
+```bash
+bun run demo:obsidian-watcher
+```
+
 ## Commands
 
 ```text
