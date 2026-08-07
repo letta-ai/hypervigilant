@@ -144,6 +144,23 @@ branch_prefix = "hypervigilant"
 
 Hypervigilant runs local file tools in a linked worktree. It commits each successful batch for an explicit merge into the source checkout.
 
+### Maintain a changelog
+
+Watch source files and let the agent append a summary to `CHANGES.md` for each batch.
+
+```toml
+version = 1
+project = "changelog"
+agent_id = "agent-xxx"
+include = ["src/**", "tests/**"]
+exclude = ["node_modules/**", ".git/**", ".hypervigilant/**", "CHANGES.md"]
+mode = "edit"
+routing = "project"
+instructions = "Append a one-line entry to CHANGES.md for each batch. Describe what changed and why."
+```
+
+The agent writes to `CHANGES.md` in the watched root. Hypervigilant suppresses the resulting watcher event, so the changelog update does not trigger another delivery.
+
 ### Add specialist reviewers
 
 Add the following rules to an existing configuration:
