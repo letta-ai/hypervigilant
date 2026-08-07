@@ -45,6 +45,7 @@ export interface AgentDeliveryOptions {
   routing: ConversationRouting;
   mode: AgentMode;
   permissionPolicy?: PermissionPolicy;
+  deliveryKind?: "update" | "scan";
   protectedPaths?: string[];
   runtimeEnv: Record<string, string>;
   onAssistantText?: (text: string) => void;
@@ -334,12 +335,14 @@ function formatAgentMessage(
   diffMessage: string,
   changes: FileChange[],
 ): string {
+  const reviewTarget =
+    opts.deliveryKind === "scan" ? "these existing files" : "these saved changes";
   const instruction =
     opts.mode === "edit"
       ? opts.permissionPolicy === "yolo"
-        ? "Inspect these saved changes. Use your available tools when useful. Fix clear file problems with Edit or Write; Hypervigilant has enabled scoped automatic approval for those local file tools. Do not ask for permission in prose. Summarize what you reviewed and any action you took."
-        : "Inspect these saved changes. Use your available tools when useful. Fix clear file problems with Edit or Write; Hypervigilant will request human approval for those local file tools. Do not ask for permission in prose. Summarize what you reviewed and any action you took."
-      : "Review these saved changes. Use your available tools when useful, but do not modify local files. Return concise, specific findings and state clearly when no action is needed.";
+        ? `Inspect ${reviewTarget}. Use your available tools when useful. Fix clear file problems with Edit or Write. Hypervigilant has enabled scoped automatic approval for those local file tools. Do not ask for permission in prose. Summarize what you reviewed and any action you took.`
+        : `Inspect ${reviewTarget}. Use your available tools when useful. Fix clear file problems with Edit or Write. Hypervigilant will request human approval for those local file tools. Do not ask for permission in prose. Summarize what you reviewed and any action you took.`
+      : `Review ${reviewTarget}. Use your available tools when useful, but do not modify local files. Return concise, specific findings and state clearly when no action is needed.`;
   const clientTools = opts.clientTools ?? EMPTY_CLIENT_TOOLS;
   const clientToolLines = [
     clientTools.autoAllow.length > 0 ? `Auto-approved: ${clientTools.autoAllow.join(", ")}` : null,
@@ -367,7 +370,11 @@ function formatAgentMessage(
       ? "Canned prompt rules activated for this delivery: none."
       : "");
   const cannedPrompts = promptRuleSection ? `\n\n${promptRuleSection}` : "";
-  return `Hypervigilant update for project ${JSON.stringify(opts.projectName)}.\n\n${instruction}${clientToolInstructions}${projectInstructions}${cannedPrompts}\n\n${diffMessage}`;
+  const opening =
+    opts.deliveryKind === "scan"
+      ? `Hypervigilant scan for project ${JSON.stringify(opts.projectName)}. Current files are shown as additions.`
+      : `Hypervigilant update for project ${JSON.stringify(opts.projectName)}.`;
+  return `${opening}\n\n${instruction}${clientToolInstructions}${projectInstructions}${cannedPrompts}\n\n${diffMessage}`;
 }
 
 export function hasUnresolvedApproval(recovery: RecoverPendingApprovalsResult): boolean {

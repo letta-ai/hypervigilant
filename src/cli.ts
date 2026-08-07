@@ -20,7 +20,7 @@ import {
 } from "./permissions.ts";
 import { formatPromptRuleSection, matchPromptRules } from "./prompts.ts";
 import { StateStore } from "./state.ts";
-import { watchCommand } from "./watch.ts";
+import { scanCommand, watchCommand } from "./watch.ts";
 import { cleanupIsolatedWorktree, getWorktreeStatus, mergeIsolatedWorktree } from "./worktree.ts";
 
 /* ──────────────────────────── Helpers ────────────────────────────── */
@@ -168,12 +168,20 @@ async function runInit(args: string[]): Promise<void> {
   log(
     `Workspace: ${result.config.worktree.enabled ? "isolated Git worktree" : "project checkout"}`,
   );
-  log("Ready to watch. Run `hypervigilant watch` to start.");
+  log("Ready. Run `hypervigilant scan` once or `hypervigilant watch` continuously.");
 }
 
 /* ──────────────────────────── Watch ─────────────────────────────── */
 
 async function runWatch(args: string[]): Promise<void> {
+  await runDeliveryCommand(args, "watch");
+}
+
+async function runScan(args: string[]): Promise<void> {
+  await runDeliveryCommand(args, "scan");
+}
+
+async function runDeliveryCommand(args: string[], command: "watch" | "scan"): Promise<void> {
   const { values, positionals } = parseArgs({
     args,
     options: {
@@ -182,31 +190,32 @@ async function runWatch(args: string[]): Promise<void> {
     strict: true,
     allowPositionals: true,
   });
+  if (positionals.length > 1) {
+    throw new Error(`${command} accepts at most one project path.`);
+  }
 
   const path = positionals[0];
   const projectRoot = resolve(path ?? process.cwd());
   const runtimeEnv = requireRuntimeEnv(projectRoot);
   const managementClient = createManagementClient(projectRoot);
   const client = createRuntimeClient(projectRoot);
-
-  await watchCommand(
-    {
-      path,
-      configPath: values.config,
-      runtimeEnv,
-      validateAgent: async (agentId) => {
-        await managementClient.agents.retrieve(agentId);
-      },
-      onAssistantText: (text: string) => {
-        process.stdout.write(text);
-      },
-      onToolApproval: interactiveApproval,
-      onClientToolApproval: interactiveClientToolApproval,
-      onStatus: log,
-      onError: logError,
+  const options = {
+    path,
+    configPath: values.config,
+    runtimeEnv,
+    validateAgent: async (agentId: string) => {
+      await managementClient.agents.retrieve(agentId);
     },
-    client,
-  );
+    onAssistantText: (text: string) => {
+      process.stdout.write(text);
+    },
+    onToolApproval: interactiveApproval,
+    onClientToolApproval: interactiveClientToolApproval,
+    onStatus: log,
+    onError: logError,
+  };
+
+  await (command === "scan" ? scanCommand(options, client) : watchCommand(options, client));
 }
 
 /* ─────────────────────────── Worktree ───────────────────────────── */
@@ -439,6 +448,9 @@ async function main(): Promise<void> {
     case "watch":
       await runWatch(restArgs);
       break;
+    case "scan":
+      await runScan(restArgs);
+      break;
     case "worktree":
       await runWorktree(restArgs);
       break;
@@ -473,6 +485,7 @@ hypervigilant — Trigger persistent Letta agents from file changes.
 
 Usage:
   hypervigilant init [path] [options]
+  hypervigilant scan [path] [options]
   hypervigilant watch [path] [options]
   hypervigilant worktree status|merge|cleanup [path] [options]
   hypervigilant permissions status|review|ask|yolo|reset [path] [options]
@@ -481,6 +494,7 @@ Usage:
 
 Commands:
   init       Create a configuration file and optionally create a Letta agent.
+  scan       Send current matching files to the agent once, then exit.
   watch      Start watching files and delivering diffs to the agent.
   worktree   Inspect, merge, or remove the isolated worktree.
   permissions Show or change the runtime edit policy.
@@ -499,7 +513,7 @@ Init options:
   --worktree             Create an isolated Git branch/worktree and auto-commit batches.
   --non-interactive       Skip interactive prompts and use defaults or flags.
 
-Watch options:
+Scan and watch options:
   --config <path>          TOML or legacy JSON config. Default: <project>/hypervigilant.toml
 
 Worktree options:
@@ -530,6 +544,7 @@ Environment:
 Examples:
   hypervigilant init /path/to/project --agent-id agent-xxx --non-interactive
   hypervigilant init /path/to/project --create-agent --mode edit
+  hypervigilant scan /path/to/project
   hypervigilant watch /path/to/project
   hypervigilant worktree status /path/to/project
   hypervigilant worktree merge /path/to/project
