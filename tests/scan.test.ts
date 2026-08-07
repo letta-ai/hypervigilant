@@ -196,6 +196,43 @@ describe("scan command", () => {
     expect(scannedState?.snapshots["removed.md"]).toBeUndefined();
   });
 
+  it("creates and persists one conversation per scanned file", async () => {
+    await writeConfig('\nrouting = "per-file"\n');
+    await writeFile(join(root, "a.md"), "a\n");
+    await writeFile(join(root, "b.md"), "b\n");
+    const { client, calls } = fakeClient();
+
+    await scan(client);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.messages[0]).toContain("a.md");
+    expect(calls[0]?.messages[0]).not.toContain("b.md");
+    expect(calls[1]?.messages[0]).toContain("b.md");
+    const state = await new StateStore({ stateDir: join(root, ".hypervigilant") }).load();
+    expect(state?.fileConversations).toEqual({
+      "a.md": "conv-new-1",
+      "b.md": "conv-new-2",
+    });
+  });
+
+  it("dispatches matching files to a named scan conversation", async () => {
+    await writeConfig(
+      '\n[[prompt_rules]]\nname = "security"\nmatch = ["src/**"]\nevents = ["add"]\nprompt = "NAMED SECURITY SCAN"\nconversation = "security"\n',
+    );
+    await mkdir(join(root, "src"));
+    await writeFile(join(root, "src", "auth.md"), "auth\n");
+    const { client, calls } = fakeClient();
+
+    await scan(client);
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.messages[0]).not.toContain("NAMED SECURITY SCAN");
+    expect(calls[1]?.messages[0]).toContain("NAMED SECURITY SCAN");
+    expect(calls[1]?.messages[0]).toContain('Conversation: "security"');
+    const state = await new StateStore({ stateDir: join(root, ".hypervigilant") }).load();
+    expect(state?.namedConversations).toEqual({ security: "conv-new-2" });
+  });
+
   it("treats scanned files as additions for prompt rules", async () => {
     await writeConfig(
       '\n[[prompt_rules]]\nname = "added"\nmatch = ["**/*.md"]\nevents = ["add"]\nprompt = "INITIAL ADD PROMPT"\n\n[[prompt_rules]]\nname = "changed"\nmatch = ["**/*.md"]\nevents = ["change"]\nprompt = "CHANGE PROMPT"\n',

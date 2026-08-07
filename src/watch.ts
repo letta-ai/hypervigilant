@@ -124,10 +124,11 @@ async function runCommand(
   const stateDirectory = worktree
     ? join(worktree.controlDir, "worktree-state")
     : resolve(projectRoot, config.stateDir);
-  const watchedMatcher = createGlobMatcher(config);
+  let watchedMatcher: ReturnType<typeof createGlobMatcher>;
   const store = new StateStore({ stateDir: stateDirectory });
   let initialized: { state: HypervigilantState; pendingChanges: FileChange[] };
   try {
+    watchedMatcher = createGlobMatcher(config);
     initialized = await initializeCommandState(
       projectRoot,
       config,

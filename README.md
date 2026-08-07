@@ -59,7 +59,7 @@ To send files that already exist in the directory, run one scan:
 bun run dev -- scan ~/hypervigilant-demo
 ```
 
-A scan sends every current matching file and exits. A later watcher reuses the saved snapshots and conversation routes. Another scan sends the current matching files again.
+A scan sends every current file selected by the configuration and exits. A later watcher reuses the saved snapshots and conversation routes. Another scan sends the selected files again.
 
 Build and link the command to use `hypervigilant` directly:
 

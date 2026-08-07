@@ -103,18 +103,27 @@ describe.skipIf(!isLiveTest)("live agent integration", () => {
     );
     const statuses: string[] = [];
 
-    await scanCommand(
-      {
-        path: fixtureRoot,
-        runtimeEnv: { LETTA_API_KEY: process.env.LETTA_API_KEY ?? "" },
-        onStatus: (message) => statuses.push(message),
-      },
-      client,
-    );
+    try {
+      await scanCommand(
+        {
+          path: fixtureRoot,
+          runtimeEnv: { LETTA_API_KEY: process.env.LETTA_API_KEY ?? "" },
+          onStatus: (message) => statuses.push(message),
+        },
+        client,
+      );
+    } finally {
+      const cleanupState = await new StateStore({
+        stateDir: join(fixtureRoot, ".hypervigilant"),
+      })
+        .load()
+        .catch(() => null);
+      const cleanupConversationId = cleanupState?.projectConversation.conversationId;
+      if (cleanupConversationId) conversationIds.add(cleanupConversationId);
+    }
 
     const state = await new StateStore({ stateDir: join(fixtureRoot, ".hypervigilant") }).load();
     const scanConversationId = state?.projectConversation.conversationId;
-    if (scanConversationId) conversationIds.add(scanConversationId);
     expect(state?.snapshots["probe.md"]?.content).toContain(probe);
     expect(scanConversationId?.startsWith("conv-")).toBe(true);
     expect(statuses).toContain("Sending 1 existing file to the agent: probe.md");
