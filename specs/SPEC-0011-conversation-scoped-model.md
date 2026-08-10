@@ -4,7 +4,7 @@ title: Conversation-scoped model selection
 status: implemented
 dependencies: [SPEC-0000, SPEC-0005]
 supersedes: []
-implementation_links: [src/config.ts, src/agent.ts, src/watch.ts, tests/config.test.ts, tests/agent.test.ts, tests/live.test.ts, README.md, hypervigilant.schema.json]
+implementation_links: [src/config.ts, src/agent.ts, src/watch.ts, tests/config.test.ts, tests/agent.test.ts, tests/live.test.ts, README.md, hypervigilant.schema.json, demo/model-routing/README.md, demo/model-routing/run.ts]
 ---
 
 # Conversation-scoped model selection
@@ -37,3 +37,4 @@ Let each Hypervigilant project select a model for the persistent conversations t
 - [x] Automated tests cover create and resume paths.
 - [x] A credentialed live test verifies that the agent default remains unchanged while the watcher conversation uses the selected model.
 - [x] Documentation states that the setting is conversation-scoped.
+- [x] A runnable demo routes separate file workloads to different models with one agent.
