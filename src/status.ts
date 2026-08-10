@@ -1,7 +1,8 @@
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { createGlobMatcher, loadConfig, resolveConfigPath } from "./config.ts";
 import { type FileSnapshot, StateStore, toRelPath } from "./state.ts";
 import { inspectFile, walkProject } from "./watcher.ts";
+import { findExistingIsolatedWorktree } from "./worktree.ts";
 
 const MAX_EXAMPLES = 5;
 
@@ -34,14 +35,20 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
   log(`Project: ${config.project}`);
   log(`Agent: ${config.agentId}`);
 
+  const worktree = config.worktree.enabled
+    ? await findExistingIsolatedWorktree(projectRoot, config)
+    : null;
+  const inspectedRoot = worktree?.watchedRoot ?? projectRoot;
   const stateStore = new StateStore({
-    stateDir: resolve(projectRoot, config.stateDir),
+    stateDir: worktree
+      ? join(worktree.controlDir, "worktree-state")
+      : resolve(projectRoot, config.stateDir),
   });
   const state = await stateStore.load();
   const agentMismatch = state !== null && state.agentId !== config.agentId;
 
   const matcher = createGlobMatcher(config);
-  const absPaths = await walkProject(projectRoot, matcher, config);
+  const absPaths = await walkProject(inspectedRoot, matcher, config);
 
   let textCount = 0,
     textBytes = 0,
@@ -51,7 +58,7 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
   const currentRelPaths = new Set<string>();
 
   for (const absPath of absPaths) {
-    const relPath = toRelPath(projectRoot, absPath);
+    const relPath = toRelPath(inspectedRoot, absPath);
     const inspected = await inspectFile(absPath, config.maxFileSizeBytes);
     if (!inspected) continue;
     currentRelPaths.add(relPath);

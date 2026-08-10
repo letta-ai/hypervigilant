@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { configSchema } from "../src/config.ts";
+import { configSchema, serializeConfigToml } from "../src/config.ts";
+import { type HypervigilantState, hashContent, StateStore, setSnapshot } from "../src/state.ts";
+import { statusCommand } from "../src/status.ts";
 import {
   acquireWorktreeWatcherLock,
   cleanupIsolatedWorktree,
@@ -88,6 +90,27 @@ describe("isolated worktrees", () => {
     const resumed = await prepareIsolatedWorktree(root, config());
     expect(resumed.branch).toBe(context.branch);
     expect(resumed.worktreeRepoRoot).toBe(context.worktreeRepoRoot);
+  });
+
+  it("reads selected files and state from an existing isolated worktree", async () => {
+    const value = config();
+    await writeFile(join(root, "hypervigilant.toml"), serializeConfigToml(value));
+    const context = await prepareIsolatedWorktree(root, value);
+    await writeFile(join(context.watchedRoot, "docs", "SPEC.md"), "Version 2\n");
+    let state: HypervigilantState = {
+      version: 1,
+      agentId: value.agentId,
+      projectConversation: { conversationId: "conv-worktree" },
+      fileConversations: {},
+      snapshots: {},
+    };
+    state = setSnapshot(state, "docs/SPEC.md", await hashContent("Version 1\n"), 10, "Version 1\n");
+    await new StateStore({ stateDir: join(context.controlDir, "worktree-state") }).save(state);
+
+    const { lines } = await statusCommand({ path: root });
+    expect(lines.some((line) => line.includes("Changed: 1"))).toBe(true);
+    expect(lines.some((line) => line.includes("2 current files -> conv-worktree"))).toBe(true);
+    expect(lines).toContain("Worktree: enabled");
   });
 
   it("does not create duplicate branches during concurrent preparation", async () => {

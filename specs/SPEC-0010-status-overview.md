@@ -23,7 +23,7 @@ Provide `hypervigilant status [path]` — a read-only overview of configuration,
 - Project routing: all selected files map to one saved project conversation or "not yet created."
 - Per-file routing: counts current files with and without saved conversation IDs, plus at most five examples with route IDs.
 - Named prompt-rule routes: shows definitions and saved IDs, but says file mapping depends on add/change/delete events.
-- Worktree: shows only `enabled` or `disabled`. No metadata, locks, or paths.
+- Worktree: shows only `enabled` or `disabled`. If an isolated worktree exists, reads its watched files and state without creating or locking it. No metadata or paths are shown.
 - Each file/example list is bounded at five. Never prints file contents, hashes, secrets, raw state JSON, absolute paths, or tool data.
 
 ## Acceptance criteria
@@ -36,7 +36,7 @@ Provide `hypervigilant status [path]` — a read-only overview of configuration,
 - [x] Agent mismatch is reported; saved conversation routes are ignored.
 - [x] Project and per-file routing overview with bounded examples.
 - [x] Named prompt-rule routes show definitions and saved IDs with event-dependency note.
-- [x] Worktree shows only enabled/disabled.
+- [x] Worktree shows only enabled/disabled and uses existing worktree files/state when present.
 - [x] Output bounded at five examples per list.
 - [x] Never prints contents, hashes, secrets, raw state JSON, absolute paths, or tool data.
 - [x] Missing state is valid; corrupt state throws.

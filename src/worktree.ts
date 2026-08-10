@@ -271,19 +271,26 @@ async function resolveSourceRepository(projectRoot: string): Promise<{
   }
 }
 
-async function loadExistingIsolatedWorktree(
+export async function findExistingIsolatedWorktree(
   projectRoot: string,
   config: Pick<HypervigilantConfig, "stateDir">,
-): Promise<WorktreeContext> {
+): Promise<WorktreeContext | null> {
   const { sourceProjectRoot, sourceRepoRoot } = await resolveSourceRepository(projectRoot);
   const controlDir = resolve(sourceProjectRoot, config.stateDir);
   const metadataPath = join(controlDir, WORKTREE_METADATA_FILENAME);
   const stored = await loadMetadata(metadataPath);
-  if (!stored) {
-    throw new Error(`No isolated Hypervigilant worktree is recorded at ${metadataPath}.`);
-  }
+  if (!stored) return null;
   const context = toContext(stored, controlDir, metadataPath);
   await validateExistingWorktree(context, sourceRepoRoot);
+  return context;
+}
+
+async function loadExistingIsolatedWorktree(
+  projectRoot: string,
+  config: Pick<HypervigilantConfig, "stateDir">,
+): Promise<WorktreeContext> {
+  const context = await findExistingIsolatedWorktree(projectRoot, config);
+  if (!context) throw new Error("No isolated Hypervigilant worktree is recorded for this project.");
   return context;
 }
 
