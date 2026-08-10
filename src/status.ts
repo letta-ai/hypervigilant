@@ -34,7 +34,9 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
   log(`Project: ${config.project}`);
   log(`Agent: ${config.agentId}`);
 
-  const stateStore = new StateStore({ stateDir: resolve(projectRoot, config.stateDir) });
+  const stateStore = new StateStore({
+    stateDir: resolve(projectRoot, config.stateDir),
+  });
   const state = await stateStore.load();
   const agentMismatch = state !== null && state.agentId !== config.agentId;
 
@@ -66,14 +68,24 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
       : snapshot.hash !== inspected.hash
         ? "changed"
         : "indexed";
-    entries.push({ relPath, state: fileState, kind: inspected.kind, size: inspected.size });
+    entries.push({
+      relPath,
+      state: fileState,
+      kind: inspected.kind,
+      size: inspected.size,
+    });
   }
 
   if (state) {
     for (const [relPath, snap] of Object.entries(state.snapshots)) {
       if (currentRelPaths.has(relPath) || !matcher.matches(relPath)) continue;
       const s = snap as FileSnapshot;
-      entries.push({ relPath, state: "stale", kind: s.kind ?? "text", size: s.size ?? 0 });
+      entries.push({
+        relPath,
+        state: "stale",
+        kind: s.kind ?? "text",
+        size: s.size ?? 0,
+      });
     }
   }
 
@@ -90,7 +102,12 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
     log(`  State belongs to agent ${state.agentId}; ignoring saved conversation routes.`);
   }
 
-  const byState: Record<FileState, FileEntry[]> = { indexed: [], changed: [], new: [], stale: [] };
+  const byState: Record<FileState, FileEntry[]> = {
+    indexed: [],
+    changed: [],
+    new: [],
+    stale: [],
+  };
   for (const e of entries) byState[e.state].push(e);
   const labels: Record<FileState, string> = {
     indexed: "Indexed",
@@ -112,19 +129,22 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
   log("");
   log("Routing:");
   log(`  Default: ${config.routing}`);
+  const currentFiles = entries
+    .filter((e) => e.state !== "stale")
+    .sort((a, b) => a.relPath.localeCompare(b.relPath));
+  const currentLabel = `${currentFiles.length} current ${currentFiles.length === 1 ? "file" : "files"}`;
   if (agentMismatch) {
     log("  Conversation routes ignored (agent mismatch).");
   } else if (config.routing === "project") {
     const convId = state?.projectConversation?.conversationId ?? null;
-    log(`  Project conversation: ${convId ?? "not yet created"}`);
+    log(`  ${currentLabel} -> ${convId ?? "not yet created"}`);
   } else {
     const fileConvs = state?.fileConversations ?? {};
-    const withIds = Object.keys(fileConvs).length;
-    const withoutIds = entries.filter((e) => e.state !== "stale" && !fileConvs[e.relPath]).length;
-    log(`  File conversations: ${withIds} with route, ${withoutIds} without`);
-    const keys = Object.keys(fileConvs).sort().slice(0, MAX_EXAMPLES);
-    for (const k of keys) log(`    ${k} -> ${fileConvs[k]}`);
-    const rem = withIds - MAX_EXAMPLES;
+    const withIds = currentFiles.filter((e) => fileConvs[e.relPath]).length;
+    log(`  Current files: ${withIds} with route, ${currentFiles.length - withIds} without`);
+    for (const e of currentFiles.slice(0, MAX_EXAMPLES))
+      log(`    ${e.relPath} -> ${fileConvs[e.relPath] ?? "not yet created"}`);
+    const rem = currentFiles.length - MAX_EXAMPLES;
     if (rem > 0) log(`    ...and ${rem} more`);
   }
 
@@ -137,6 +157,8 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
     for (const name of uniqueNames) {
       const id = namedConvs[name] ?? null;
       log(`  ${name}: ${id ?? "not yet created"}`);
+      for (const rule of config.promptRules.filter((r) => r.conversation === name))
+        log(`    ${rule.name}: ${rule.match.join(", ")} [${rule.events.join(", ")}]`);
     }
     log("  File mapping depends on add/change/delete events; status is static.");
   }

@@ -548,7 +548,7 @@ Prompt commands:
   Named conversations      Optional persistent filesystem-read-only routes.
 
 Environment:
-  LETTA_API_KEY            Required. Your Letta API key.
+  LETTA_API_KEY            Required for agent setup and watch. Status does not use it.
 
 Examples:
   hypervigilant init /path/to/project --agent-id agent-xxx --non-interactive

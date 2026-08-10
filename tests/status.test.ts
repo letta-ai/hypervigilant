@@ -15,12 +15,21 @@ function makeConfig(o: Partial<HypervigilantConfig> = {}): HypervigilantConfig {
     include: ["**/*.md", "**/*.txt"],
     exclude: ["**/node_modules/**", "**/.git/**", ".hypervigilant/**", "**/.hypervigilant/**"],
     maxFileSizeBytes: 1_048_576,
-    batching: { strategy: "debounce", delayMs: 500, maxWaitMs: 5000, windowMs: 2000 },
+    batching: {
+      strategy: "debounce",
+      delayMs: 500,
+      maxWaitMs: 5000,
+      windowMs: 2000,
+    },
     mode: "edit",
     routing: "project",
     stateDir: ".hypervigilant",
     instructions: "",
-    worktree: { enabled: false, autoCommit: true, branchPrefix: "hypervigilant" },
+    worktree: {
+      enabled: false,
+      autoCommit: true,
+      branchPrefix: "hypervigilant",
+    },
     ...o,
     promptRules: o.promptRules ?? [],
     tools: o.tools ?? { autoAllow: [], ask: [] },
@@ -57,7 +66,7 @@ describe("status", () => {
     expect(hasLine(lines, "Agent: agent-test-id")).toBe(true);
     expect(hasLine(lines, "Persisted snapshots: 0")).toBe(true);
     expect(hasLine(lines, "New: 1")).toBe(true);
-    expect(hasLine(lines, "Project conversation: not yet created")).toBe(true);
+    expect(hasLine(lines, "1 current file -> not yet created")).toBe(true);
     expect(hasLine(lines, "Worktree: disabled")).toBe(true);
   });
 
@@ -108,7 +117,11 @@ describe("status", () => {
     await writeConfig(testRoot, config);
     let state: HypervigilantState = {
       ...baseState("agent-DIFFERENT"),
-      fileConversations: { "a.md": "conv-a", "b.md": "conv-b" },
+      fileConversations: {
+        "a.md": "conv-a",
+        "b.md": "conv-b",
+        "gone.md": "conv-gone",
+      },
       namedConversations: { security: "conv-sec-123" },
     };
     state = setSnapshot(state, "a.md", await hashContent("a\n"), 2, "a\n");
@@ -122,6 +135,14 @@ describe("status", () => {
     expect(
       hasLine(lines, "File mapping depends on add/change/delete events; status is static."),
     ).toBe(true);
+
+    state = { ...state, agentId: config.agentId };
+    await saveState(testRoot, config.stateDir, state);
+    const matching = await statusCommand({ path: testRoot });
+    expect(hasLine(matching.lines, "Current files: 2 with route, 0 without")).toBe(true);
+    expect(hasLine(matching.lines, "a.md -> conv-a")).toBe(true);
+    expect(hasLine(matching.lines, "gone.md -> conv-gone")).toBe(false);
+    expect(hasLine(matching.lines, "security-review: src/auth/** [add, change]")).toBe(true);
   });
 
   it("bounds output, never prints contents/hashes, does not mutate state, needs no API key", async () => {
