@@ -7,7 +7,7 @@ const { values } = parseArgs({
   options: {
     "agent-id": { type: "string" },
     "primary-model": { type: "string", default: "letta/auto" },
-    "economy-model": { type: "string", default: "openai/gpt-4o-mini" },
+    "economy-model": { type: "string", default: "openai/gpt-5.6-luna" },
     workspace: { type: "string", default: "/tmp/hypervigilant-model-routing" },
     "prepare-only": { type: "boolean", default: false },
   },

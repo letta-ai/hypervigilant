@@ -5,7 +5,7 @@ One Hypervigilant configuration selects one model. Run multiple configurations w
 This demo starts two watchers on one directory. Both watchers use the same agent. Each watcher owns a separate conversation and state directory.
 
 - `code/**` uses `letta/auto` for source review.
-- `notes/**` uses `openai/gpt-4o-mini` for lower-cost note triage.
+- `notes/**` uses `openai/gpt-5.6-luna` for lower-cost note triage.
 
 Start both watchers:
 
@@ -28,7 +28,7 @@ Use other model handles when needed:
 bun demo/model-routing/run.ts \
   --agent-id agent-xxx \
   --primary-model letta/auto \
-  --economy-model openai/gpt-5.6-luna
+  --economy-model letta/auto-fast
 ```
 
 Use `--prepare-only` to write the workspace and print separate watcher commands without starting them.

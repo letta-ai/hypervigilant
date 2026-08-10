@@ -102,7 +102,7 @@ The model-routing demo starts two watchers with the same agent:
 bun demo/model-routing/run.ts --agent-id agent-xxx
 ```
 
-The code watcher uses `letta/auto`. The notes watcher uses `openai/gpt-4o-mini` for lower-cost triage. Each watcher owns a separate conversation.
+The code watcher uses `letta/auto`. The notes watcher uses `openai/gpt-5.6-luna` for lower-cost triage. Each watcher owns a separate conversation.
 
 See [`demo/model-routing`](demo/model-routing/README.md) for the generated configurations, sample edits, and model override flags.
 
