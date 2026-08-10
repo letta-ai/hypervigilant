@@ -15,6 +15,8 @@ function makeConfig(o: Partial<HypervigilantConfig> = {}): HypervigilantConfig {
     include: ["**/*.md", "**/*.txt"],
     exclude: ["**/node_modules/**", "**/.git/**", ".hypervigilant/**", "**/.hypervigilant/**"],
     maxFileSizeBytes: 1_048_576,
+    maxScanFiles: 100,
+    maxScanTextBytes: 65_536,
     batching: {
       strategy: "debounce",
       delayMs: 500,

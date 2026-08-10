@@ -11,6 +11,8 @@ import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { extractStreamTextDelta, LettaAgentClient } from "@letta-ai/letta-agent-sdk";
+import { StateStore } from "../src/state.ts";
+import { scanCommand } from "../src/watch.ts";
 
 const testAgentId = process.env.HYPERVIGILANT_TEST_AGENT_ID;
 const isLiveTest = process.env.HYPERVIGILANT_LIVE_TEST === "1" && Boolean(testAgentId);
@@ -19,7 +21,7 @@ describe.skipIf(!isLiveTest)("live agent integration", () => {
   const fixtureRoot = join(import.meta.dirname, "tmp-live");
   const probe = `hypervigilant-local-probe-${Date.now()}`;
   let client: LettaAgentClient;
-  let conversationId: string | null = null;
+  const conversationIds = new Set<string>();
 
   beforeAll(async () => {
     const apiKey = process.env.LETTA_API_KEY;
@@ -36,12 +38,16 @@ describe.skipIf(!isLiveTest)("live agent integration", () => {
   });
 
   afterAll(async () => {
-    if (conversationId) {
+    if (conversationIds.size > 0) {
       const cleanupClient = new LettaAgentClient({
         backend: "cloud",
         apiKey: process.env.LETTA_API_KEY,
       });
-      await cleanupClient.conversations.update(conversationId, { archived: true }).catch(() => {});
+      for (const conversationId of conversationIds) {
+        await cleanupClient.conversations
+          .update(conversationId, { archived: true })
+          .catch(() => {});
+      }
     }
     await rm(fixtureRoot, { recursive: true, force: true });
   });
@@ -78,7 +84,7 @@ describe.skipIf(!isLiveTest)("live agent integration", () => {
           toolOutput += message.content;
         }
         if (message.type === "result") {
-          conversationId = message.conversationId;
+          if (message.conversationId) conversationIds.add(message.conversationId);
           assistantText ||= message.result ?? "";
           success = message.success;
         }
@@ -88,5 +94,39 @@ describe.skipIf(!isLiveTest)("live agent integration", () => {
     } finally {
       session.close();
     }
+  }, 120_000);
+
+  it("sends an existing file through the one-shot scan command", async () => {
+    await writeFile(
+      join(fixtureRoot, "hypervigilant.toml"),
+      `version = 1\nproject = "live-scan"\nagent_id = ${JSON.stringify(testAgentId)}\ninclude = ["probe.md"]\nmode = "review"\n`,
+    );
+    const statuses: string[] = [];
+
+    try {
+      await scanCommand(
+        {
+          path: fixtureRoot,
+          runtimeEnv: { LETTA_API_KEY: process.env.LETTA_API_KEY ?? "" },
+          onStatus: (message) => statuses.push(message),
+        },
+        client,
+      );
+    } finally {
+      const cleanupState = await new StateStore({
+        stateDir: join(fixtureRoot, ".hypervigilant"),
+      })
+        .load()
+        .catch(() => null);
+      const cleanupConversationId = cleanupState?.projectConversation.conversationId;
+      if (cleanupConversationId) conversationIds.add(cleanupConversationId);
+    }
+
+    const state = await new StateStore({ stateDir: join(fixtureRoot, ".hypervigilant") }).load();
+    const scanConversationId = state?.projectConversation.conversationId;
+    expect(state?.snapshots["probe.md"]?.content).toContain(probe);
+    expect(scanConversationId?.startsWith("conv-")).toBe(true);
+    expect(statuses).toContain("Sending 1 existing file to the agent: probe.md");
+    expect(statuses).toContain("Scan complete.");
   }, 120_000);
 });

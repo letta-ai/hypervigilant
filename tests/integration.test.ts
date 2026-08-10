@@ -69,6 +69,8 @@ describe("integration", () => {
       include: ["**/*.md", "**/*.txt"],
       exclude: ["**/node_modules/**", "**/.git/**"],
       maxFileSizeBytes: 1_048_576,
+      maxScanFiles: 100,
+      maxScanTextBytes: 65_536,
       batching: {
         strategy: "immediate",
         delayMs: 10,

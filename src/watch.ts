@@ -64,13 +64,25 @@ class MutationSuppressions {
     this.expirations.delete(relPath);
     return false;
   }
-
-  activePaths(): string[] {
-    return [...this.expirations.keys()].filter((relPath) => this.has(relPath));
-  }
 }
 
+export type ScanOptions = WatchOptions;
+
+type CommandMode = "watch" | "scan";
+
 export async function watchCommand(opts: WatchOptions, client: LettaAgentClient): Promise<void> {
+  return runCommand(opts, client, "watch");
+}
+
+export async function scanCommand(opts: ScanOptions, client: LettaAgentClient): Promise<void> {
+  return runCommand(opts, client, "scan");
+}
+
+async function runCommand(
+  opts: WatchOptions,
+  client: LettaAgentClient,
+  commandMode: CommandMode,
+): Promise<void> {
   const sourceProjectRoot = resolve(opts.path ?? process.cwd());
   const resolvedConfig = resolveConfigPath(sourceProjectRoot, opts.configPath);
   const config = await loadConfig(resolvedConfig.path);
@@ -112,32 +124,24 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
   const stateDirectory = worktree
     ? join(worktree.controlDir, "worktree-state")
     : resolve(projectRoot, config.stateDir);
-  const watchedMatcher = createGlobMatcher(config);
+  let watchedMatcher: ReturnType<typeof createGlobMatcher>;
   const store = new StateStore({ stateDir: stateDirectory });
-  const loadedState = await store.load();
-  let state: HypervigilantState;
-  if (!loadedState) {
-    opts.onStatus?.("First run: establishing the saved-file baseline...");
-    state = await establishBaseline(projectRoot, config);
-    await store.save(state);
-    opts.onStatus?.("Baseline established. Existing files were not sent.");
-  } else if (loadedState.agentId !== config.agentId) {
-    state = resetConversationRoutes(loadedState, config.agentId);
-    await store.save(state);
-    opts.onStatus?.("Agent changed. Conversation routes were reset.");
-  } else {
-    state = loadedState;
+  let initialized: { state: HypervigilantState; pendingChanges: FileChange[] };
+  try {
+    watchedMatcher = createGlobMatcher(config);
+    initialized = await initializeCommandState(
+      projectRoot,
+      config,
+      store,
+      commandMode,
+      opts.onStatus,
+    );
+  } catch (error) {
+    await releaseWorktreeLock();
+    throw error;
   }
-  if (state.binaryBaselineEstablished !== true) {
-    state = await establishBinaryBaseline(projectRoot, config, state);
-    await store.save(state);
-    opts.onStatus?.("Binary baseline established. Existing binary files were not sent.");
-  }
-
-  const offlineChanges = await detectOfflineChanges(projectRoot, config, state.snapshots);
-  if (offlineChanges.length > 0) {
-    opts.onStatus?.(`Found ${offlineChanges.length} change(s) made while stopped.`);
-  }
+  let { state } = initialized;
+  const { pendingChanges } = initialized;
 
   const turnSerializer = new TurnSerializer();
   const suppressions = new MutationSuppressions();
@@ -162,7 +166,7 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
   const batcher: Batcher = createBatcher(config, async (rawChanges) => {
     try {
       await turnSerializer.run(async () => {
-        const changes = hydrateChanges(rawChanges, state);
+        const changes = hydrateChanges(rawChanges, state, commandMode === "scan");
         if (changes.length === 0) return;
         const nextPermissionStatus = await getPermissionStatus(sourceProjectRoot, config);
         if (nextPermissionStatus.effective !== permissionStatus.effective) {
@@ -174,8 +178,11 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
         if (permissionStatus.effective === "ask" && !opts.onToolApproval) {
           throw new Error("Ask permission policy requires an interactive tool-approval callback.");
         }
-        opts.onStatus?.(formatDeliveryStatus(changes));
+        opts.onStatus?.(
+          commandMode === "scan" ? formatScanStatus(changes) : formatDeliveryStatus(changes),
+        );
         const batchMutationPaths = new Set<string>();
+        const watchedMutationPaths = new Set<string>();
         const onToolApproval = approvalForPolicy(permissionStatus.effective, opts);
 
         const delivery = await deliverBatch(client, state, changes, {
@@ -188,6 +195,7 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
           routing: config.routing,
           mode: permissionAgentMode(permissionStatus.effective),
           permissionPolicy: permissionStatus.effective,
+          deliveryKind: commandMode === "scan" ? "scan" : "update",
           protectedPaths: [
             resolve(sourceProjectRoot, config.stateDir),
             resolvedConfig.path,
@@ -201,7 +209,10 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
           onClientToolApproval: opts.onClientToolApproval,
           onAgentMutation: (relPath) => {
             batchMutationPaths.add(relPath);
-            if (watchedMatcher.matches(relPath)) suppressions.mark(relPath);
+            if (watchedMatcher.matches(relPath)) {
+              watchedMutationPaths.add(relPath);
+              suppressions.mark(relPath);
+            }
           },
         });
 
@@ -211,7 +222,14 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
           if (!delivered.has(change.relPath)) continue;
           state = applyDeliveredChange(state, change);
         }
-        for (const relPath of suppressions.activePaths()) {
+        if (commandMode === "scan" && delivery.result.success) {
+          state = removeMissingScanSnapshots(
+            state,
+            watchedMatcher,
+            new Set(changes.map((change) => change.relPath)),
+          );
+        }
+        for (const relPath of watchedMutationPaths) {
           const absPath = join(projectRoot, ...relPath.split("/"));
           const inspected = await inspectFile(absPath, config.maxFileSizeBytes);
           state = inspected
@@ -250,16 +268,17 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
         }
 
         if (delivery.result.success) {
-          opts.onStatus?.("Delivery complete.");
+          opts.onStatus?.(commandMode === "scan" ? "Scan complete." : "Delivery complete.");
         } else {
-          opts.onError?.(
-            `Delivery stopped (${delivery.result.errorCode ?? "error"}): ${
-              delivery.result.error ?? "unknown error"
-            }`,
-          );
+          const message = `Delivery stopped (${delivery.result.errorCode ?? "error"}): ${
+            delivery.result.error ?? "unknown error"
+          }`;
+          if (commandMode === "scan") throw new Error(message);
+          opts.onError?.(message);
         }
       });
     } catch (error) {
+      if (commandMode === "scan") throw error;
       opts.onError?.(
         `Failed to process a saved-change batch: ${
           error instanceof Error ? error.message : String(error)
@@ -268,7 +287,22 @@ export async function watchCommand(opts: WatchOptions, client: LettaAgentClient)
     }
   });
 
-  for (const change of offlineChanges) batcher.add(change);
+  for (const change of pendingChanges) batcher.add(change);
+
+  if (commandMode === "scan") {
+    try {
+      if (pendingChanges.length === 0) {
+        state = removeMissingScanSnapshots(state, watchedMatcher, new Set());
+        await store.save(state);
+        opts.onStatus?.("No matching files found. Nothing was sent.");
+      } else {
+        await batcher.close();
+      }
+    } finally {
+      await releaseWorktreeLock();
+    }
+    return;
+  }
 
   const watcher = new FileWatcher({
     projectRoot,
@@ -337,6 +371,96 @@ function formatPermissionStatus(status: Awaited<ReturnType<typeof getPermissionS
     : `${status.effective} (configured)`;
 }
 
+async function initializeCommandState(
+  projectRoot: string,
+  config: HypervigilantConfig,
+  store: StateStore,
+  commandMode: CommandMode,
+  onStatus: WatchOptions["onStatus"],
+): Promise<{ state: HypervigilantState; pendingChanges: FileChange[] }> {
+  const loadedState = await store.load();
+  let state: HypervigilantState;
+  if (!loadedState) {
+    if (commandMode === "scan") {
+      state = emptyState(config.agentId);
+      await store.save(state);
+    } else {
+      onStatus?.("First run: establishing the saved-file baseline...");
+      state = await establishBaseline(projectRoot, config);
+      await store.save(state);
+      onStatus?.("Baseline established. Existing files were not sent.");
+    }
+  } else if (loadedState.agentId !== config.agentId) {
+    state = resetConversationRoutes(loadedState, config.agentId);
+    await store.save(state);
+    onStatus?.("Agent changed. Conversation routes were reset.");
+  } else {
+    state = loadedState;
+  }
+
+  if (commandMode === "watch" && state.binaryBaselineEstablished !== true) {
+    state = await establishBinaryBaseline(projectRoot, config, state);
+    await store.save(state);
+    onStatus?.("Binary baseline established. Existing binary files were not sent.");
+  } else if (commandMode === "scan" && state.binaryBaselineEstablished !== true) {
+    state = { ...state, binaryBaselineEstablished: true };
+    await store.save(state);
+  }
+
+  const pendingChanges = await detectOfflineChanges(
+    projectRoot,
+    config,
+    commandMode === "scan" ? {} : state.snapshots,
+  );
+  if (pendingChanges.length > 0) {
+    onStatus?.(
+      commandMode === "scan"
+        ? `Found ${pendingChanges.length} matching ${pendingChanges.length === 1 ? "file" : "files"} to scan.`
+        : `Found ${pendingChanges.length} change(s) made while stopped.`,
+    );
+  }
+  if (commandMode === "scan") enforceScanBudget(pendingChanges, config, onStatus);
+  return { state, pendingChanges };
+}
+
+function enforceScanBudget(
+  changes: FileChange[],
+  config: Pick<HypervigilantConfig, "maxScanFiles" | "maxScanTextBytes">,
+  onStatus: WatchOptions["onStatus"],
+): void {
+  let textFiles = 0;
+  let textBytes = 0;
+  let binaryFiles = 0;
+  let binaryBytes = 0;
+  for (const change of changes) {
+    if (change.kind === "binary") {
+      binaryFiles += 1;
+      binaryBytes += change.size ?? 0;
+    } else {
+      textFiles += 1;
+      textBytes += change.size ?? 0;
+    }
+  }
+  const number = (value: number) => value.toLocaleString("en-US");
+  const files = (value: number) => `${number(value)} ${value === 1 ? "file" : "files"}`;
+  onStatus?.(
+    `Scan preflight: ${number(changes.length)}/${number(config.maxScanFiles)} files. Text: ${files(textFiles)}, ${number(textBytes)}/${number(config.maxScanTextBytes)} bytes, estimated ${number(Math.ceil(textBytes / 4))}-${number(textBytes)} tokens. Binary: ${files(binaryFiles)}, ${number(binaryBytes)} bytes, metadata only.`,
+  );
+  const violations = [
+    changes.length > config.maxScanFiles
+      ? `${changes.length} files exceeds max_scan_files ${config.maxScanFiles}`
+      : null,
+    textBytes > config.maxScanTextBytes
+      ? `${textBytes} text bytes exceeds max_scan_text_bytes ${config.maxScanTextBytes}`
+      : null,
+  ].filter((value): value is string => value !== null);
+  if (violations.length > 0) {
+    throw new Error(
+      `Scan blocked before delivery. ${violations.join(". ")}. Narrow the include and exclude globs or raise the limits intentionally.`,
+    );
+  }
+}
+
 export function formatDeliveryStatus(changes: Array<Pick<FileChange, "relPath">>): string {
   const count = changes.length;
   const visiblePaths = changes.slice(0, 4).map((change) => change.relPath);
@@ -345,7 +469,24 @@ export function formatDeliveryStatus(changes: Array<Pick<FileChange, "relPath">>
   return `Sending ${count} saved ${count === 1 ? "change" : "changes"} to the agent: ${pathSummary}`;
 }
 
-function hydrateChanges(changes: FileChange[], state: HypervigilantState): FileChange[] {
+export function formatScanStatus(changes: Array<Pick<FileChange, "relPath">>): string {
+  const count = changes.length;
+  const visiblePaths = changes.slice(0, 4).map((change) => change.relPath);
+  const remaining = count - visiblePaths.length;
+  const pathSummary = `${visiblePaths.join(", ")}${remaining > 0 ? `, and ${remaining} more` : ""}`;
+  return `Sending ${count} existing ${count === 1 ? "file" : "files"} to the agent: ${pathSummary}`;
+}
+
+function hydrateChanges(
+  changes: FileChange[],
+  state: HypervigilantState,
+  forceAdd = false,
+): FileChange[] {
+  if (forceAdd) {
+    return changes
+      .filter((change) => change.hash !== null)
+      .map((change) => ({ ...change, event: "add", oldContent: null }));
+  }
   return changes
     .map((change) => {
       const snapshot = state.snapshots[change.relPath];
@@ -374,6 +515,20 @@ function applyDeliveredChange(state: HypervigilantState, change: FileChange): Hy
       );
 }
 
+function removeMissingScanSnapshots(
+  state: HypervigilantState,
+  matcher: Pick<ReturnType<typeof createGlobMatcher>, "matches">,
+  currentPaths: ReadonlySet<string>,
+): HypervigilantState {
+  let nextState = state;
+  for (const relPath of Object.keys(state.snapshots)) {
+    if (matcher.matches(relPath) && !currentPaths.has(relPath)) {
+      nextState = removeSnapshot(nextState, relPath);
+    }
+  }
+  return nextState;
+}
+
 export async function establishBinaryBaseline(
   projectRoot: string,
   config: HypervigilantConfig,
@@ -391,19 +546,23 @@ export async function establishBinaryBaseline(
   return { ...nextState, binaryBaselineEstablished: true };
 }
 
-export async function establishBaseline(
-  projectRoot: string,
-  config: HypervigilantConfig,
-): Promise<HypervigilantState> {
-  let state: HypervigilantState = {
+function emptyState(agentId: string): HypervigilantState {
+  return {
     version: 1,
-    agentId: config.agentId,
+    agentId,
     projectConversation: { conversationId: null },
     fileConversations: {},
     namedConversations: {},
     snapshots: {},
     binaryBaselineEstablished: true,
   };
+}
+
+export async function establishBaseline(
+  projectRoot: string,
+  config: HypervigilantConfig,
+): Promise<HypervigilantState> {
+  let state = emptyState(config.agentId);
   const matcher = createGlobMatcher(config);
   for (const absPath of await walkProject(projectRoot, matcher, config)) {
     try {
