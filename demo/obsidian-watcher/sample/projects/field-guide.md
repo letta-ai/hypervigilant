@@ -1,6 +1,6 @@
 ---
 type: project
-status: active
+status: pending-publication
 ---
 
 # Field guide
@@ -11,4 +11,4 @@ Draft complete. Publication is still pending.
 
 ## Next step
 
-Publish the generated page, then record its URL and readback in [[projects/publishing-log|Publishing log]].
+Publish the generated page, then record its URL, deployment identifier, and readback in [[projects/publishing-log|Publishing log]].

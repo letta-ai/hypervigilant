@@ -11,5 +11,5 @@ status: active
 
 ## Projects
 
-- [[projects/field-guide|Field guide]]
+- [[projects/field-guide|Field guide]] — pending-publication
 - [[projects/publishing-log|Publishing log]]

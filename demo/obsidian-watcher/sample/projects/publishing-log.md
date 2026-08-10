@@ -1,6 +1,6 @@
 ---
 type: project-log
-status: active
+status: pending
 ---
 
 # Publishing log

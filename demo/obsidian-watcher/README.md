@@ -1,19 +1,12 @@
-# Obsidian watcher
+# Obsidian Watcher
 
-**Give one Markdown vault several persistent kinds of attention.**
+**Write naturally. Let one persistent steward carry verified changes through the vault.**
 
-This demo runs one Hypervigilant watcher and one dedicated Letta Auto agent. Saved notes reach a default maintenance conversation plus the named specialist conversations selected by their paths:
+Obsidian Watcher connects every non-state Markdown save to one dedicated Letta Auto agent. The agent reads the vault's local conventions, keeps one project conversation across saves and restarts, makes approval-gated edits, and stays quiet when nothing should change.
 
-| Listener | Matches | Job |
-| --- | --- | --- |
-| Default maintainer | Every watched note | Apply only unambiguous, approval-gated mechanical repairs. |
-| Connections | Every watched note | Check wikilinks, index membership, and likely duplicate concepts. |
-| Claims | Concepts, research, companies, AI, and agent-infrastructure notes | Separate observed or current facts from inference, plans, and history. |
-| Continuity | Projects, work, and meetings | Check status, next steps, dates, receipts, and handoffs. |
+The user interacts with one steward, not a panel of reviewers. The steward may inspect links, evidence, indexes, project state, and nearby notes as needed, but those are parts of one job: keeping the vault trustworthy while the user writes.
 
-The listeners are persistent conversations on one agent, not four agents. Hypervigilant runs matching routes sequentially, starting with the default conversation. Named conversations are filesystem-read-only. Their findings remain independent terminal output; Hypervigilant does not feed them back into the default maintainer. The default conversation is the only route that can propose a local edit, and each edit still needs approval.
-
-## Run the sample vault
+## Run the controlled story
 
 From the Hypervigilant repository root:
 
@@ -21,70 +14,74 @@ From the Hypervigilant repository root:
 bun run demo:obsidian-watcher
 ```
 
-The first run copies [`sample/`](sample/) into the ignored `workspace/` directory, creates a dedicated agent with `model: "auto"` and MemFS disabled, writes the demo config, and establishes a baseline. Every route uses that agent and submits its turn through Letta Auto.
+The first run:
 
-To reuse an existing agent instead:
+1. Copies [`sample/`](sample/) into ignored `workspace/`.
+2. Creates one dedicated agent with `model: "auto"` and MemFS disabled.
+3. Writes `hypervigilant.toml`.
+4. Records the existing vault as a no-send baseline.
+5. Starts watching every `*.md` file.
+
+To reuse an existing agent:
 
 ```bash
 bun run demo:obsidian-watcher -- --agent-id agent-xxx
 ```
 
-After the watcher prints `Baseline established` and `Watching`, run the prepared change in another terminal. This script targets only the ignored sample workspace; it never accepts an external vault path:
+After the watcher prints `Baseline established` and `Watching`, introduce one ordinary work event from another terminal:
 
 ```bash
 bun demo/obsidian-watcher/scripts/introduce-change.ts
 ```
 
-The script saves two files inside one debounce window:
+The script saves two files inside one idle window:
 
-- A concept note equates a source commit with user-visible delivery, omits required frontmatter, and links to a missing note.
-- A project note says a field guide is public while its publishing log still says no deployment receipt exists.
+- `projects/publishing-log.md` gains a complete synthetic deployment receipt: URL, deployment ID, and successful readback.
+- `Inbox/field-guide-release.md` asks `@watcher` to propagate that verified publication while preserving the handoff as source.
 
-That batch reaches four routes:
+The steward should inspect `VAULT.md`, confirm the receipt, and propose these edits:
 
-```text
-default project conversation
-connections
-claims
-continuity
-```
+- Change `projects/field-guide.md` from `pending-publication` to `published`.
+- Replace its publication step with the next real action: announce the release.
+- Change the field guide's status marker in `index.md`.
+- Append one evidence-backed receipt to `Watcher Inbox.md`.
 
-The exact findings vary by model. The connection listener should find the unresolved wikilink, the claim listener should separate a commit from a delivery receipt, and the continuity listener should catch the contradictory publication state. The default maintainer may propose a mechanical repair. Hypervigilant prints the target and diff before asking for approval.
+Hypervigilant shows each target and diff before asking for approval. The source handoff remains unchanged because both the vault contract and the request tell the steward to preserve it; this is an approval-visible agent convention, not a filesystem lock. Agent-authored edits advance watcher state without generating a second delivery.
 
-Inspect the fan-out without contacting the agent:
+That single loop demonstrates the useful capacity: a captured fact becomes consistent durable state, under explicit authority, with an audit trail.
 
-```bash
-bun run dev -- prompts test concepts/shipping-is-done.md \
-  --event add \
-  --project demo/obsidian-watcher/workspace
+## The sample's trust contract
 
-bun run dev -- prompts test projects/field-guide.md \
-  --event change \
-  --project demo/obsidian-watcher/workspace
-```
+The agent reads the contract from [`sample/VAULT.md`](sample/VAULT.md). It does not receive a hard-coded universal Obsidian schema.
 
-## Why this uses one Auto agent
+The sample contract establishes that:
 
-Every matching conversation produces an agent turn. A careless configuration that sends every note to six specialists is just a committee meeting with a token budget.
+- `@watcher` is an explicit request, not proof that its factual premises are true.
+- Raw inbox and meeting notes remain source material.
+- Exact local receipts can authorize state propagation through the approval gate.
+- Ambiguous semantic choices go to `Watcher Inbox.md` instead of being silently resolved.
+- Material work creates one receipt; a no-op creates none.
 
-This demo bounds the work in three ways:
+This split is intentionally based on evidence and meaning. It is not based on which internal reviewer happened to notice the problem.
 
-1. One dedicated worker agent owns all routes. Its setup explicitly selects Letta Auto and disables MemFS, avoiding a separate git-backed memory repo for a worker whose durable context already lives in conversations and Hypervigilant route state.
-2. Hypervigilant watches every Markdown file. Specialist rules still match only the note classes that need them: a concept does not trigger project continuity, and an arbitrary note does not trigger claim review unless the configuration says it should.
-3. Debouncing collapses nearby saves into one batch, and the initial scan records a baseline without sending the existing vault to the agent.
+## Why one Auto agent
 
-Use `hypervigilant prompts test` before adding a listener. The useful question is not whether another reviewer sounds helpful. It is which file change should be expensive enough to wake it.
+One settled batch creates one agent turn. Letta Auto chooses the model; Hypervigilant owns the durable conversation, local tool boundary, approval flow, batching, snapshots, and restart behavior.
 
-## Adapt the demo to a real vault
+The debounce waits for 2.5 seconds of silence after the latest save instead of treating every Obsidian autosave as a separate thought. If saves continue, a ten-second maximum flushes the batch anyway. Adjust both values for the vault's actual writing cadence.
 
-Pass a vault path to setup. The command writes `hypervigilant.toml` but does not copy the sample notes into an external vault:
+The agent can inspect additional files through read-only local tools. Hypervigilant sends only changed-file diffs in the event itself, rather than embedding the whole vault in every prompt.
+
+## Use it with another vault
+
+Setup writes a configuration into an explicit vault. It never copies the synthetic sample there:
 
 ```bash
 bun run demo:obsidian-watcher:setup -- \
   --vault "$HOME/Documents/My Vault"
 ```
 
-The setup command does not replace an existing config. Pass `--force` to refresh the listener rules while keeping the configured agent, or combine `--force` with `--agent-id` to replace the agent selection. You can also select an existing agent during first setup:
+To select an existing agent:
 
 ```bash
 bun run demo:obsidian-watcher:setup -- \
@@ -92,20 +89,26 @@ bun run demo:obsidian-watcher:setup -- \
   --agent-id agent-xxx
 ```
 
-Review these parts of the generated config before starting the watcher:
+Setup preserves an existing configuration. `--force` refreshes the steward instructions while retaining its agent; combine `--force` with `--agent-id` to replace the agent selection.
 
-- **`include`** watches `**/*.md`. Folder names and capitalization do not determine whether the default maintainer sees a note.
-- **`exclude`** removes only Git, Letta, Obsidian, Hypervigilant, and trash state directories. It does not silently omit journals, references, archives, or unfamiliar knowledge structures.
-- **`instructions`** permits only conservative mechanical repairs. Change it to match the vault's actual conventions.
-- **`[[prompt_rules]]`** define listener cost. Delete any route that does not produce decisions or repairs you will use.
+Before starting, adapt the generated instructions to the vault's actual trust contract. A useful real vault usually documents:
 
-Start the configured vault explicitly:
+- which local file defines conventions
+- which changes are mechanical
+- which receipts establish completion
+- which authored notes must remain source material
+- where unresolved questions and action receipts should go
+- whether an inline command such as `@watcher` has authority
+
+Then start the watcher:
 
 ```bash
 bun run dev -- watch "$HOME/Documents/My Vault"
 ```
 
-The first scan stores full text for every non-excluded Markdown file under the private `.hypervigilant/` state directory. If that is too much local state for a very large vault, narrow `include` deliberately rather than relying on the demo to guess which folders matter. The state directory and `hypervigilant.toml` can expose local structure and agent IDs, so keep both out of public version control.
+The default configuration watches `**/*.md` and excludes only Git, Letta, Obsidian, Hypervigilant, and trash state. Folder names and capitalization carry no hidden authority.
+
+The first scan stores full text for every included file under `.hypervigilant/`. Narrow `include` deliberately if that local state is too large. Keep `.hypervigilant/` and `hypervigilant.toml` out of public version control when they expose private paths, prompts, or agent IDs.
 
 ## Reset the sample
 
@@ -115,4 +118,4 @@ Stop the watcher, then run:
 bun run demo:obsidian-watcher:reset
 ```
 
-Reset restores the sample notes and preserves the dedicated agent, route IDs, and delivery state. On the next watcher start, Hypervigilant sends the reset as an offline change; wait for that delivery before introducing the prepared change again. Remove `demo/obsidian-watcher/workspace/` if you want a completely fresh demo.
+Reset restores the sample files and removes the synthetic handoff without deleting the agent or its conversation ID. The next watcher start delivers the reset as one offline batch. Remove `demo/obsidian-watcher/workspace/` for a completely fresh baseline.

@@ -33,19 +33,19 @@ export function autoAgentOptions(vaultRoot: string): CreateAgentOptions {
     .replace(/-+$/g, "");
   return {
     name: agentName || "obsidian-watcher-demo",
-    description: "Maintains a Markdown knowledge vault through persistent specialist conversations.",
+    description: "Acts as a persistent lead steward for a Markdown knowledge vault.",
     model: "auto",
     memfs: false,
     memory: [
       {
         label: "persona",
         value:
-          "You maintain a Markdown knowledge vault. Preserve the author's words and uncertainty. Prefer exact file evidence over plausible reconstruction. Apply only unambiguous mechanical repairs; report interpretive issues without rewriting them.",
+          "You are a quiet, conservative steward for a Markdown knowledge vault. Preserve authored source material and uncertainty. Prefer exact local evidence over plausible reconstruction. Carry verified changes into durable state, repair clear mechanics, and leave semantic choices to the user.",
       },
       {
         label: "project",
         value:
-          "Hypervigilant sends saved-file diffs into one default conversation and several named, filesystem-read-only specialist conversations. Keep each conversation focused on its assigned review lane.",
+          "Hypervigilant sends settled saved-file batches into one persistent project conversation. Inspect only the local context needed for each batch, make approved vault edits when warranted, and remain silent beyond `No vault action needed.` when nothing should change.",
       },
     ],
   };
@@ -99,6 +99,7 @@ async function readConfiguredAgentId(configPath: string): Promise<string> {
 
 export const samplePaths = [
   "VAULT.md",
+  "Watcher Inbox.md",
   "index.md",
   "concepts/delivery-receipts.md",
   "projects/field-guide.md",
@@ -142,7 +143,7 @@ export async function setupObsidianWatcher(
   if (configExists) {
     existingAgentId = await readConfiguredAgentId(configPath);
     if (options.force) {
-      // Replace listener configuration while preserving the current agent by default.
+      // Replace steward configuration while preserving the current agent by default.
     } else {
       if (options.agentId) {
         throw new Error("A config already exists. Use --force to replace its agent selection.");

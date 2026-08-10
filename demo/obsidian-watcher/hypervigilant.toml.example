@@ -18,12 +18,12 @@ max_file_size_bytes = 1048576
 mode = "edit"
 routing = "project"
 state_dir = ".hypervigilant"
-instructions = "Maintain this Markdown knowledge vault conservatively. Start with the exact changed notes, then read indexes, linked notes, nearby project notes, and VAULT.md when it exists and bears directly on the change. Preserve the author's prose and uncertainty. You may propose a guarded edit only for an unambiguous local repair such as malformed frontmatter, a broken link with one exact target, or a project heading required by documented vault conventions. Report interpretive issues without rewriting them. Never invent a source, link target, current status, or completed action. Receiving a diff proves only that this route began processing it; require persisted evidence before claiming that another route or external effect completed."
+instructions = "Act as the lead steward for this Markdown vault. The user wants to write naturally while you carry evidenced changes into durable vault state. Start with the exact changed files. Read VAULT.md when present, then inspect only the linked notes, indexes, receipts, and local conventions needed for this batch. An `@watcher` line is an explicit request, but its factual premises still require local evidence. Use Edit or Write for unambiguous mechanical repairs and explicitly requested state propagation when the evidence and target are exact; Hypervigilant will obtain human approval for each mutation. Preserve raw source notes and the author's prose unless the request names them as targets. Do not infer completion from a plan, a save event, or your own tool call. Put unresolved semantic choices in Watcher Inbox.md when that file and a documented inbox convention exist. After approved material changes, append one concise receipt there with changed paths, evidence, and open questions; do not write a receipt for a no-op. If nothing needs action, respond only `No vault action needed.` Do not narrate your inspection process or produce a review essay."
 
 [batching]
 strategy = "debounce"
-delay_ms = 350
-max_wait_ms = 1800
+delay_ms = 2500
+max_wait_ms = 10000
 window_ms = 1000
 
 [tools]
@@ -34,37 +34,3 @@ ask = []
 enabled = false
 auto_commit = false
 branch_prefix = "hypervigilant"
-
-[[prompt_rules]]
-name = "connection-integrity"
-match = ["**/*.md"]
-events = ["add", "change", "delete"]
-prompt = "Act as the connection listener. Check changed notes for unresolved or ambiguous wikilinks, missing index links, and likely duplicate concepts. For deletions, check for inbound links that now point nowhere. Search the vault before naming a target. Report exact paths and evidence. Do not modify files."
-conversation = "connections"
-
-[[prompt_rules]]
-name = "claim-boundaries"
-match = [
-  "concepts/**/*.md",
-  "Concepts/**/*.md",
-  "notes/**/*.md",
-  "Notes/**/*.md",
-  "research/**/*.md",
-  "Research/**/*.md",
-  "companies/**/*.md",
-  "ai/**/*.md",
-  "letta/**/*.md",
-  "learning/**/*.md",
-  "strategic/**/*.md",
-  "thought-stream/**/*.md",
-]
-events = ["add", "change"]
-prompt = "Act as the claim-boundary listener. Identify claims that the changed note presents as observed, current, or settled when its own evidence supports only an inference, plan, or historical fact. Seeing this diff proves only that this claims review began; it does not prove that other routes finished or that downstream effects occurred. Use local sources and linked notes only. Do not demand citations for clearly personal observations. Do not modify files."
-conversation = "claims"
-
-[[prompt_rules]]
-name = "project-continuity"
-match = ["projects/**/*.md", "Projects/**/*.md", "work/**/*.md", "meetings/**/*.md"]
-events = ["add", "change", "delete"]
-prompt = "Act as the project-continuity listener. Compare status, next steps, dates, and completion claims with the changed note's receipts and directly related project notes. Distinguish a plan from a completed action and history from current state. This conversation can verify its own lane when its ID matches a recorded receipt, but it cannot infer that other lanes completed. Report only concrete contradictions or missing handoffs. Do not modify files."
-conversation = "continuity"
