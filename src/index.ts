@@ -116,6 +116,11 @@ export {
   toSafeRelPath,
 } from "./state.ts";
 export {
+  type StatusOptions,
+  type StatusResult,
+  statusCommand,
+} from "./status.ts";
+export {
   approvalForPolicy,
   establishBaseline,
   establishBinaryBaseline,

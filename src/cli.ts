@@ -20,6 +20,7 @@ import {
 } from "./permissions.ts";
 import { formatPromptRuleSection, matchPromptRules } from "./prompts.ts";
 import { StateStore } from "./state.ts";
+import { statusCommand } from "./status.ts";
 import { watchCommand } from "./watch.ts";
 import { cleanupIsolatedWorktree, getWorktreeStatus, mergeIsolatedWorktree } from "./worktree.ts";
 
@@ -392,6 +393,20 @@ async function runPrompts(args: string[]): Promise<void> {
   console.log(section);
 }
 
+/* ─────────────────────────── Status ─────────────────────────────── */
+
+async function runStatus(args: string[]): Promise<void> {
+  const { values, positionals } = parseArgs({
+    args,
+    options: { config: { type: "string" } },
+    strict: true,
+    allowPositionals: true,
+  });
+  if (positionals.length > 1) throw new Error("Status accepts at most one project path.");
+  const result = await statusCommand({ path: positionals[0], configPath: values.config });
+  for (const line of result.lines) console.log(line);
+}
+
 /* ──────────────────────────── Client ────────────────────────────── */
 
 /**
@@ -436,6 +451,9 @@ async function main(): Promise<void> {
     case "init":
       await runInit(restArgs);
       break;
+    case "status":
+      await runStatus(restArgs);
+      break;
     case "watch":
       await runWatch(restArgs);
       break;
@@ -473,6 +491,7 @@ hypervigilant — Trigger persistent Letta agents from file changes.
 
 Usage:
   hypervigilant init [path] [options]
+  hypervigilant status [path] [options]
   hypervigilant watch [path] [options]
   hypervigilant worktree status|merge|cleanup [path] [options]
   hypervigilant permissions status|review|ask|yolo|reset [path] [options]
@@ -481,6 +500,7 @@ Usage:
 
 Commands:
   init       Create a configuration file and optionally create a Letta agent.
+  status     Show a read-only overview of configuration, state, and routing.
   watch      Start watching files and delivering diffs to the agent.
   worktree   Inspect, merge, or remove the isolated worktree.
   permissions Show or change the runtime edit policy.
@@ -498,6 +518,9 @@ Init options:
   --state-dir <dir>       State directory. Default: .hypervigilant.
   --worktree             Create an isolated Git branch/worktree and auto-commit batches.
   --non-interactive       Skip interactive prompts and use defaults or flags.
+
+Status options:
+  --config <path>          TOML or legacy JSON config. Default: <project>/hypervigilant.toml
 
 Watch options:
   --config <path>          TOML or legacy JSON config. Default: <project>/hypervigilant.toml
@@ -530,6 +553,7 @@ Environment:
 Examples:
   hypervigilant init /path/to/project --agent-id agent-xxx --non-interactive
   hypervigilant init /path/to/project --create-agent --mode edit
+  hypervigilant status /path/to/project
   hypervigilant watch /path/to/project
   hypervigilant worktree status /path/to/project
   hypervigilant worktree merge /path/to/project

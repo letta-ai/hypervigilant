@@ -352,6 +352,7 @@ The demo sends each saved change to an agent. Verified agent edits appear in the
 
 ```text
 hypervigilant init [path]                    Create project configuration
+hypervigilant status [path]                  Show read-only configuration and state overview
 hypervigilant watch [path]                   Start the watcher
 hypervigilant watch [path] --config FILE     Use another config file
 hypervigilant permissions ...                Inspect or change runtime policy
@@ -360,6 +361,14 @@ hypervigilant prompts test ...               Test rule matching without an agent
 hypervigilant worktree status|merge|cleanup  Manage the isolated worktree
 hypervigilant version                        Print the installed version
 hypervigilant help                           Show all commands and flags
+```
+
+### Status overview
+
+Show configuration, file selection, snapshot state, routing, and worktree status without contacting the Letta API or mutating state:
+
+```bash
+hypervigilant status /path/to/project
 ```
 
 ## Limits
