@@ -120,6 +120,9 @@ export {
   establishBaseline,
   establishBinaryBaseline,
   formatDeliveryStatus,
+  formatScanStatus,
+  type ScanOptions,
+  scanCommand,
   type WatchOptions,
   watchCommand,
 } from "./watch.ts";
