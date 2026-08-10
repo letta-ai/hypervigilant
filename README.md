@@ -109,11 +109,11 @@ hypervigilant permissions yolo /path/to/image-inbox
 
 Hypervigilant reports image events but does not move files. File moves need a guarded client tool or an attached Letta tool.
 
-### Watch an Obsidian vault
+### Review Markdown notes independently
 
 ```toml
 version = 1
-project = "notes"
+project = "independent-notes"
 agent_id = "agent-xxx"
 include = ["**/*.md"]
 exclude = [".obsidian/**", ".trash/**", ".hypervigilant/**"]
@@ -122,7 +122,7 @@ routing = "per-file"
 instructions = "Keep each note accurate and internally consistent. Preserve the author's voice."
 ```
 
-Each note gets a persistent conversation. The default edit policy asks before each agent write.
+Each note gets a separate persistent conversation. Use this pattern when notes should not share context. For one steward that carries changes across an Obsidian vault, use the [Obsidian Watcher demo](demo/obsidian-watcher/).
 
 ### Watch a software project in a worktree
 
