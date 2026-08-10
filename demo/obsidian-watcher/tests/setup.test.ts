@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { CreateAgentOptions } from "@letta-ai/letta-agent-sdk";
-import { createGlobMatcher, loadConfig } from "../../../src/config.ts";
+import picomatch from "picomatch";
 import { introduceVaultChange } from "../scripts/introduce-change.ts";
 import { resetSampleVault } from "../scripts/reset.ts";
 import {
@@ -12,6 +12,32 @@ import {
   parseSetupArguments,
   setupObsidianWatcher,
 } from "../scripts/setup.ts";
+
+const packageRoot = resolve(import.meta.dir, "..", "..", "..");
+
+async function runCli(args: string[]): Promise<string> {
+  const sourceCli = join(packageRoot, "src", "cli.ts");
+  const command = existsSync(sourceCli)
+    ? ["bun", "run", sourceCli, ...args]
+    : ["bun", join(packageRoot, "dist", "cli.js"), ...args];
+  const child = Bun.spawn(command, { cwd: packageRoot, stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  if (exitCode !== 0) throw new Error(stderr || stdout || `CLI exited ${exitCode}`);
+  return stdout;
+}
+
+function configMatches(config: Record<string, unknown>, relPath: string): boolean {
+  const include = config.include as string[];
+  const exclude = config.exclude as string[];
+  return (
+    include.some((glob) => picomatch(glob, { dot: true })(relPath)) &&
+    !exclude.some((glob) => picomatch(glob, { dot: true })(relPath))
+  );
+}
 
 describe("Obsidian watcher demo", () => {
   let root: string;
@@ -46,22 +72,25 @@ describe("Obsidian watcher demo", () => {
     expect(await Bun.file(join(root, "VAULT.md")).exists()).toBe(true);
     expect(await Bun.file(join(root, "Watcher Inbox.md")).exists()).toBe(true);
 
-    const config = await loadConfig(result.configPath);
+    const config = Bun.TOML.parse(await readFile(result.configPath, "utf8"));
     expect(config.mode).toBe("edit");
     expect(config.routing).toBe("project");
     expect(config.include).toEqual(["**/*.md"]);
-    expect(config.promptRules).toEqual([]);
-    expect(config.batching.delayMs).toBe(2500);
-    expect(config.batching.maxWaitMs).toBe(10000);
+    expect(config.prompt_rules).toBeUndefined();
+    expect(config.batching.delay_ms).toBe(2500);
+    expect(config.batching.max_wait_ms).toBe(10000);
     expect(config.instructions).toContain("@watcher");
     expect(config.instructions).toContain("No vault action needed.");
 
-    const matcher = createGlobMatcher(config);
-    expect(matcher.matches("Whatever/Someone Else's Layout.md")).toBe(true);
-    expect(matcher.matches("Reference/archive.md")).toBe(true);
-    expect(matcher.matches(".obsidian/plugins/example/readme.md")).toBe(false);
-    expect(matcher.matches(".hypervigilant/private.md")).toBe(false);
-    expect(matcher.matches("notes/image.png")).toBe(false);
+    expect(configMatches(config, "whatever/someone-elses-layout.md")).toBe(true);
+    expect(configMatches(config, "reference/archive.md")).toBe(true);
+    expect(configMatches(config, ".obsidian/plugins/example/readme.md")).toBe(false);
+    expect(configMatches(config, ".hypervigilant/private.md")).toBe(false);
+    expect(configMatches(config, "notes/image.png")).toBe(false);
+
+    expect(await runCli(["prompts", "list", root])).toContain(
+      "No canned prompt rules are configured.",
+    );
   });
 
   it("introduces one evidenced handoff without rewriting source project state", async () => {
@@ -177,7 +206,7 @@ describe("Obsidian watcher demo", () => {
     });
     expect(result.agentId).toBe("agent-first");
     expect(result.createdAgent).toBe(false);
-    expect((await loadConfig(result.configPath)).promptRules).toEqual([]);
+    expect(Bun.TOML.parse(await readFile(result.configPath, "utf8")).prompt_rules).toBeUndefined();
   });
 
   it("parses setup paths and agent selection", () => {
