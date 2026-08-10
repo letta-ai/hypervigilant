@@ -37,7 +37,7 @@ bun demo/obsidian-watcher/scripts/introduce-change.ts
 The script saves two files inside one idle window:
 
 - `projects/publishing-log.md` gains a complete synthetic deployment receipt: URL, deployment ID, and successful readback.
-- `Inbox/field-guide-release.md` asks `@watcher` to propagate that verified publication while preserving the handoff as source.
+- `inbox/field-guide-release.md` asks `@watcher` to propagate that verified publication while preserving the handoff as source.
 
 The steward should inspect `VAULT.md`, confirm the receipt, and propose these edits:
 

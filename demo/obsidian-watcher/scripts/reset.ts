@@ -6,9 +6,9 @@ export async function resetSampleVault(
   workspaceRoot = resolve(defaultWorkspaceRoot),
 ): Promise<void> {
   await copySampleVault(workspaceRoot, true);
-  await rm(join(workspaceRoot, "Inbox", "field-guide-release.md"), { force: true });
+  await rm(join(workspaceRoot, "inbox", "field-guide-release.md"), { force: true });
   try {
-    await rmdir(join(workspaceRoot, "Inbox"));
+    await rmdir(join(workspaceRoot, "inbox"));
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ENOENT" && code !== "ENOTEMPTY") throw error;

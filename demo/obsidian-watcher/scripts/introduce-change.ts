@@ -17,8 +17,8 @@ export async function introduceVaultChange(
   }
 
   const publishingLogPath = join(workspaceRoot, "projects", "publishing-log.md");
-  const handoffPath = join(workspaceRoot, "Inbox", "field-guide-release.md");
-  await mkdir(join(workspaceRoot, "Inbox"), { recursive: true });
+  const handoffPath = join(workspaceRoot, "inbox", "field-guide-release.md");
+  await mkdir(join(workspaceRoot, "inbox"), { recursive: true });
 
   await writeFile(
     publishingLogPath,

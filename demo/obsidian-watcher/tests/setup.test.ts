@@ -76,7 +76,7 @@ describe("Obsidian watcher demo", () => {
     const inboxBefore = await readFile(join(root, "Watcher Inbox.md"), "utf8");
 
     const change = await introduceVaultChange(root, new Date("2026-08-10T12:34:56.000Z"));
-    expect(change.handoffPath).toBe(join(root, "Inbox", "field-guide-release.md"));
+    expect(change.handoffPath).toBe(join(root, "inbox", "field-guide-release.md"));
     expect(await readFile(change.publishingLogPath, "utf8")).toContain(
       "Deployment: demo-deploy-1042",
     );
@@ -115,7 +115,7 @@ describe("Obsidian watcher demo", () => {
 
     await resetSampleVault(root);
     expect(await Bun.file(change.handoffPath).exists()).toBe(false);
-    expect(existsSync(join(root, "Inbox"))).toBe(false);
+    expect(existsSync(join(root, "inbox"))).toBe(false);
     expect(await readFile(join(root, "projects", "field-guide.md"), "utf8")).toContain(
       "status: pending-publication",
     );
