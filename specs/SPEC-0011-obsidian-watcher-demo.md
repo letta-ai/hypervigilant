@@ -49,7 +49,7 @@ Demonstrate one persistent Letta Auto agent turning an ordinary Markdown work ev
 
 ## Implementation links
 
-- `demo/obsidian-watcher/hypervigilant.toml.example` owns all-Markdown selection, idle batching, and the lead-steward contract.
+- `demo/obsidian-watcher/hypervigilant.toml.example` owns all-Markdown selection, idle batching, and saved-diff event semantics.
 - `demo/obsidian-watcher/sample/VAULT.md` owns the synthetic vault's trust and receipt conventions.
 - `demo/obsidian-watcher/scripts/setup.ts` creates the Auto worker, copies the sample only for the controlled demo, and writes validated configuration.
 - `demo/obsidian-watcher/scripts/introduce-change.ts` creates one verified publication event and one explicit handoff inside a single idle window.
