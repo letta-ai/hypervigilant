@@ -1,43 +1,18 @@
 version = 1
 project = "obsidian-watcher-demo"
 agent_id = "agent-REPLACE-ME"
-include = [
-  "*.md",
-  "concepts/**/*.md",
-  "Concepts/**/*.md",
-  "notes/**/*.md",
-  "Notes/**/*.md",
-  "projects/**/*.md",
-  "Projects/**/*.md",
-  "work/**/*.md",
-  "meetings/**/*.md",
-  "mocs/**/*.md",
-  "MOCs/**/*.md",
-  "inbox/**/*.md",
-  "Inbox/**/*.md",
-  "research/**/*.md",
-  "Research/**/*.md",
-  "companies/**/*.md",
-  "ai/**/*.md",
-  "letta/**/*.md",
-  "learning/**/*.md",
-  "strategic/**/*.md",
-  "thought-stream/**/*.md",
-  "public/**/*.md",
-  "blog/**/*.md",
-]
+include = ["**/*.md"]
 exclude = [
   ".git/**",
+  "**/.git/**",
   ".hypervigilant/**",
   "**/.hypervigilant/**",
   ".letta/**",
+  "**/.letta/**",
   ".obsidian/**",
+  "**/.obsidian/**",
   ".trash/**",
-  "attachments/**",
-  "reference/**",
-  "journal/**",
-  "reports/**",
-  "consolidation/**",
+  "**/.trash/**",
 ]
 max_file_size_bytes = 1048576
 mode = "edit"

@@ -70,7 +70,7 @@ Every matching conversation produces an agent turn. A careless configuration tha
 This demo bounds the work in three ways:
 
 1. One dedicated worker agent owns all routes. Its setup explicitly selects Letta Auto and disables MemFS, avoiding a separate git-backed memory repo for a worker whose durable context already lives in conversations and Hypervigilant route state.
-2. Specialist rules match only the note classes that need them. A concept does not trigger project continuity. A meeting note does not trigger claim review unless the configuration says it should.
+2. Hypervigilant watches every Markdown file. Specialist rules still match only the note classes that need them: a concept does not trigger project continuity, and an arbitrary note does not trigger claim review unless the configuration says it should.
 3. Debouncing collapses nearby saves into one batch, and the initial scan records a baseline without sending the existing vault to the agent.
 
 Use `hypervigilant prompts test` before adding a listener. The useful question is not whether another reviewer sounds helpful. It is which file change should be expensive enough to wake it.
@@ -94,8 +94,8 @@ bun run demo:obsidian-watcher:setup -- \
 
 Review these parts of the generated config before starting the watcher:
 
-- **`include`** starts with active concepts, notes, projects, work, meetings, MOCs, inboxes, research, companies, AI and agent-infrastructure notes, and public writing. Common lowercase and title-cased Obsidian folder names are both included. Journals, reports, consolidation logs, and large reference archives are intentionally omitted.
-- **`exclude`** removes Obsidian state, trash, attachments, Hypervigilant state, and common high-volume archive directories.
+- **`include`** watches `**/*.md`. Folder names and capitalization do not determine whether the default maintainer sees a note.
+- **`exclude`** removes only Git, Letta, Obsidian, Hypervigilant, and trash state directories. It does not silently omit journals, references, archives, or unfamiliar knowledge structures.
 - **`instructions`** permits only conservative mechanical repairs. Change it to match the vault's actual conventions.
 - **`[[prompt_rules]]`** define listener cost. Delete any route that does not produce decisions or repairs you will use.
 
@@ -105,7 +105,7 @@ Start the configured vault explicitly:
 bun run dev -- watch "$HOME/Documents/My Vault"
 ```
 
-The first scan stores full text for included Markdown files under the private `.hypervigilant/` state directory. Narrow `include` before the first run on a large vault. The state directory and `hypervigilant.toml` can expose local structure and agent IDs, so keep both out of public version control.
+The first scan stores full text for every non-excluded Markdown file under the private `.hypervigilant/` state directory. If that is too much local state for a very large vault, narrow `include` deliberately rather than relying on the demo to guess which folders matter. The state directory and `hypervigilant.toml` can expose local structure and agent IDs, so keep both out of public version control.
 
 ## Reset the sample
 

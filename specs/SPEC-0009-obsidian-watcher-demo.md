@@ -17,6 +17,7 @@ Show how one Markdown knowledge vault can route saved changes to several persist
 
 - The demo creates one dedicated worker agent with the explicit `auto` model and MemFS disabled, or accepts an existing Letta agent ID.
 - One default project conversation receives every watched change and remains the only route that can propose guarded local edits.
+- The default watch set includes every non-excluded Markdown file, independent of folder naming or capitalization.
 - Three named, filesystem-read-only conversations review connections, claim boundaries, and project continuity.
 - Routes run sequentially, and specialist findings are not aggregated into the default conversation.
 - Prompt rules select specialists by path. Concepts do not trigger project continuity, and project notes do not trigger claim review by default.
@@ -33,6 +34,7 @@ Show how one Markdown knowledge vault can route saved changes to several persist
 - [x] Agent creation explicitly requests `model: "auto"` and `memfs: false`.
 - [x] One concept change matches connections and claims but not continuity.
 - [x] One project change matches connections and continuity but not claims.
+- [x] An arbitrarily nested Markdown file reaches the default route and connections without requiring a recognized folder name.
 - [x] Named routes remain filesystem-read-only under SPEC-0005.
 - [x] Existing-agent setup does not create another agent.
 - [x] Existing configuration is preserved without explicit replacement.
@@ -56,3 +58,5 @@ Show how one Markdown knowledge vault can route saved changes to several persist
 - `demo/obsidian-watcher/tests/setup.test.ts` verifies model selection, config validation, route fan-out, existing-agent reuse, and overwrite protection.
 
 Live acceptance used a 71-file Obsidian test vault. The first run established a no-send baseline, delivered one two-file batch through the default and all three named routes, applied three separately approved mechanical repairs, persisted four conversation IDs, and produced no edit feedback loop. After a clean stop, two offline edits dispatched once and resumed the same four conversations. The claims prompt was tightened after the first run incorrectly treated receipt of its own diff as evidence that all routes had completed.
+
+A follow-up generalized the watch set to `**/*.md`. Eight Markdown files from previously unrecognized reference and skill folders were detected once, delivered through the default and connections routes, and produced two separately approved mechanical repairs without a feedback loop. A clean note under an otherwise unknown `Oddball/` directory then reached the same two general routes, proving that folder taxonomy is not part of default delivery authority.

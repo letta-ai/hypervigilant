@@ -58,6 +58,7 @@ describe("Obsidian watcher demo", () => {
     const parsed = Bun.TOML.parse(await readFile(result.configPath, "utf8"));
     expect(parsed.mode).toBe("edit");
     expect(parsed.routing).toBe("project");
+    expect(parsed.include).toEqual(["**/*.md"]);
     expect(parsed.prompt_rules.map((rule: { conversation: string }) => rule.conversation)).toEqual([
       "connections",
       "claims",
@@ -102,6 +103,18 @@ describe("Obsidian watcher demo", () => {
     expect(project).toContain('Conversation: "connections"');
     expect(project).toContain('Conversation: "continuity"');
     expect(project).not.toContain('Conversation: "claims"');
+
+    const arbitrary = await runPrompts([
+      "test",
+      "Whatever/Someone Else's Layout.md",
+      "--event",
+      "change",
+      "--project",
+      root,
+    ]);
+    expect(arbitrary).toContain('Conversation: "connections"');
+    expect(arbitrary).not.toContain('Conversation: "claims"');
+    expect(arbitrary).not.toContain('Conversation: "continuity"');
 
     const capitalizedProject = await runPrompts([
       "test",
