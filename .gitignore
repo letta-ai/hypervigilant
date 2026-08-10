@@ -8,3 +8,4 @@ dist/
 /test-file.txt
 demo/spec-guardian/hypervigilant.toml
 demo/the-doc/workspace/
+demo/obsidian-watcher/workspace/
