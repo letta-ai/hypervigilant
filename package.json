@@ -13,6 +13,8 @@
     ".env.example",
     "hypervigilant.example.toml",
     "hypervigilant.schema.json",
+    "demo/model-routing/README.md",
+    "demo/model-routing/run.ts",
     "demo/spec-guardian/README.md",
     "demo/spec-guardian/SPEC.md",
     "demo/spec-guardian/hypervigilant.toml.example",

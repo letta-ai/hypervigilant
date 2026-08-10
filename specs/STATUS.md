@@ -13,3 +13,4 @@
 | SPEC-0008 | Metadata-only binary file events | implemented | SPEC-0000, SPEC-0006 |
 | SPEC-0009 | One-shot initial scan | implemented | SPEC-0000, SPEC-0003, SPEC-0005, SPEC-0006, SPEC-0008 |
 | SPEC-0010 | Read-only status overview | implemented | SPEC-0000, SPEC-0001, SPEC-0005, SPEC-0008 |
+| SPEC-0011 | Conversation-scoped model selection | implemented | SPEC-0000, SPEC-0005 |

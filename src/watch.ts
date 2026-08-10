@@ -187,6 +187,7 @@ async function runCommand(
 
         const delivery = await deliverBatch(client, state, changes, {
           agentId: config.agentId,
+          model: config.model,
           projectName: config.project,
           projectRoot,
           instructions: config.instructions,

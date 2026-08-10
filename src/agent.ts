@@ -37,6 +37,7 @@ export type { HypervigilantState };
 
 export interface AgentDeliveryOptions {
   agentId: string;
+  model?: string;
   projectName: string;
   projectRoot: string;
   instructions?: string;
@@ -419,6 +420,7 @@ async function deliverToConversation(
   );
 
   const sessionOptions: LettaCodeClientSessionOptions = {
+    ...(opts.model ? { model: opts.model } : {}),
     allowedTools,
     toolset: { base: "none", include: allowedTools },
     permissionMode: "standard",

@@ -23,6 +23,7 @@ describe("config", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.include).toEqual(["**/*.md", "**/*.txt"]);
+        expect(result.data.model).toBeUndefined();
         expect(result.data.exclude).toEqual([
           "**/node_modules/**",
           "**/.git/**",
@@ -54,6 +55,7 @@ describe("config", () => {
         version: 1,
         project: "my-project",
         agentId: "agent-abc123",
+        model: "auto",
         include: ["**/*.ts"],
         exclude: ["**/dist/**"],
         maxFileSizeBytes: 512_000,
@@ -91,6 +93,7 @@ describe("config", () => {
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.batching.strategy).toBe("fixed-window");
+        expect(result.data.model).toBe("auto");
         expect(result.data.mode).toBe("edit");
         expect(result.data.routing).toBe("per-file");
         expect(result.data.worktree.branchPrefix).toBe("hv/reviews");
@@ -299,6 +302,7 @@ describe("config", () => {
         `version = 1
 project = "demo"
 agent_id = "agent-demo"
+model = "auto"
 include = ["SPEC.md", "src/**/*.ts"]
 exclude = [".hypervigilant/**"]
 max_file_size_bytes = 2048
@@ -335,6 +339,7 @@ conversation = "spec-review"
 
       const config = await loadConfig(path);
       expect(config.agentId).toBe("agent-demo");
+      expect(config.model).toBe("auto");
       expect(config.maxFileSizeBytes).toBe(2048);
       expect(config.maxScanFiles).toBe(12);
       expect(config.maxScanTextBytes).toBe(4096);
@@ -371,6 +376,7 @@ conversation = "spec-review"
         version: 1,
         project: "quoted project",
         agentId: "agent-roundtrip",
+        model: "auto",
         instructions: "Check SPEC.md.\nReport drift.",
         tools: { autoAllow: ["ViewImage"], ask: ["TodoWrite"] },
         promptRules: [
@@ -387,6 +393,7 @@ conversation = "spec-review"
       await writeFile(path, serialized);
       expect(await loadConfig(path)).toEqual(config);
       expect(serialized).toContain('agent_id = "agent-roundtrip"');
+      expect(serialized).toContain('model = "auto"');
       expect(serialized).toContain("[batching]");
       expect(serialized).toContain("[tools]");
       expect(serialized).toContain('auto_allow = ["ViewImage"]');

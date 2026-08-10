@@ -4,6 +4,7 @@
  * Required:
  *   HYPERVIGILANT_LIVE_TEST=1
  *   HYPERVIGILANT_TEST_AGENT_ID=agent-...
+ *   HYPERVIGILANT_TEST_MODEL=letta/auto
  *   LETTA_API_KEY=...
  */
 
@@ -15,7 +16,9 @@ import { StateStore } from "../src/state.ts";
 import { scanCommand } from "../src/watch.ts";
 
 const testAgentId = process.env.HYPERVIGILANT_TEST_AGENT_ID;
-const isLiveTest = process.env.HYPERVIGILANT_LIVE_TEST === "1" && Boolean(testAgentId);
+const testModel = process.env.HYPERVIGILANT_TEST_MODEL;
+const isLiveTest =
+  process.env.HYPERVIGILANT_LIVE_TEST === "1" && Boolean(testAgentId) && Boolean(testModel);
 
 describe.skipIf(!isLiveTest)("live agent integration", () => {
   const fixtureRoot = join(import.meta.dirname, "tmp-live");
@@ -26,7 +29,9 @@ describe.skipIf(!isLiveTest)("live agent integration", () => {
   beforeAll(async () => {
     const apiKey = process.env.LETTA_API_KEY;
     if (!apiKey || !testAgentId) {
-      throw new Error("Live tests require HYPERVIGILANT_TEST_AGENT_ID and LETTA_API_KEY.");
+      throw new Error(
+        "Live tests require HYPERVIGILANT_TEST_AGENT_ID, HYPERVIGILANT_TEST_MODEL, and LETTA_API_KEY.",
+      );
     }
     process.env.LETTA_API_KEY = apiKey;
     await mkdir(fixtureRoot, { recursive: true });
@@ -97,9 +102,10 @@ describe.skipIf(!isLiveTest)("live agent integration", () => {
   }, 120_000);
 
   it("sends an existing file through the one-shot scan command", async () => {
+    const agentBefore = await client.agents.retrieve(testAgentId as string);
     await writeFile(
       join(fixtureRoot, "hypervigilant.toml"),
-      `version = 1\nproject = "live-scan"\nagent_id = ${JSON.stringify(testAgentId)}\ninclude = ["probe.md"]\nmode = "review"\n`,
+      `version = 1\nproject = "live-scan"\nagent_id = ${JSON.stringify(testAgentId)}\nmodel = ${JSON.stringify(testModel)}\ninclude = ["probe.md"]\nmode = "review"\n`,
     );
     const statuses: string[] = [];
 
@@ -126,6 +132,12 @@ describe.skipIf(!isLiveTest)("live agent integration", () => {
     const scanConversationId = state?.projectConversation.conversationId;
     expect(state?.snapshots["probe.md"]?.content).toContain(probe);
     expect(scanConversationId?.startsWith("conv-")).toBe(true);
+    const [agentAfter, conversation] = await Promise.all([
+      client.agents.retrieve(testAgentId as string),
+      client.conversations.retrieve(scanConversationId as string),
+    ]);
+    expect(agentAfter.model).toBe(agentBefore.model);
+    expect(conversation.model).toBe(testModel);
     expect(statuses).toContain("Sending 1 existing file to the agent: probe.md");
     expect(statuses).toContain("Scan complete.");
   }, 120_000);

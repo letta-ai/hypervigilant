@@ -90,6 +90,22 @@ Hypervigilant detects changes made while it was stopped at the next startup. Age
 
 ## Examples
 
+### Route workloads to different models
+
+One configuration selects one model. Run multiple configurations when files need different models or instructions.
+
+Each configuration must use a separate `state_dir`. Use non-overlapping `include` globs when each file must go to only one model.
+
+The model-routing demo starts two watchers with the same agent:
+
+```bash
+bun demo/model-routing/run.ts --agent-id agent-xxx
+```
+
+The code watcher uses `letta/auto`. The notes watcher uses `openai/gpt-5.6-luna` for lower-cost triage. Each watcher owns a separate conversation.
+
+See [`demo/model-routing`](demo/model-routing/README.md) for the generated configurations, sample edits, and model override flags.
+
 ### Tag new images in an inbox
 
 This configuration sends new images to an image-capable agent. The agent records descriptions and tags in `catalog.md`.
@@ -211,6 +227,18 @@ project = "my-project"
 agent_id = "agent-xxx"
 ```
 
+Add `model` to select a model for the project:
+
+```toml
+model = "auto"
+```
+
+The setting applies to every project, per-file, and named conversation in one configuration. It does not change the agent default or unrelated conversations.
+
+If you omit `model`, each watcher conversation keeps its existing effective model. A `prompt_rule` cannot override the setting.
+
+Run another configuration when one prompt or file group needs a different model.
+
 The remaining fields have defaults. See the following files for the complete configuration:
 
 - [`hypervigilant.example.toml`](hypervigilant.example.toml) contains every common section.
@@ -220,6 +248,7 @@ Legacy `hypervigilant.json` files load only when no TOML file exists.
 
 | Configuration key | Default | Purpose |
 | --- | --- | --- |
+| `model` | inherited | Select the model for Hypervigilant-owned conversations only. |
 | `include` | Markdown and text files | Select project-relative paths. |
 | `exclude` | Git, `node_modules`, and state paths | Remove matching paths from the watch set. |
 | `max_file_size_bytes` | `1048576` | Skip files above this size. |

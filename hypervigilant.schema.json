@@ -21,6 +21,11 @@
       "minLength": 1,
       "description": "Letta agent ID (agent-xxx)."
     },
+    "model": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Optional model for Hypervigilant-owned conversations. Does not change the agent default."
+    },
     "include": {
       "type": "array",
       "items": { "type": "string", "minLength": 1 },
