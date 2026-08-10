@@ -86,7 +86,7 @@ hypervigilant help
 
 Hypervigilant detects changes made while it was stopped at the next startup. Agent turns run sequentially.
 
-`scan` uses the same file selection, routes, permissions, and state. It presents each current file as an `add` event. After success, it removes stale matching snapshots without reporting deletion events.
+`scan` uses the same file selection, routes, permissions, and state. It presents each current file as an `add` event. Before delivery, it prints file, byte, and estimated token totals. It blocks scans above the configured file or text-byte limits. After success, it removes stale matching snapshots without reporting deletion events.
 
 ## Examples
 
@@ -223,6 +223,8 @@ Legacy `hypervigilant.json` files load only when no TOML file exists.
 | `include` | Markdown and text files | Select project-relative paths. |
 | `exclude` | Git, `node_modules`, and state paths | Remove matching paths from the watch set. |
 | `max_file_size_bytes` | `1048576` | Skip files above this size. |
+| `max_scan_files` | `100` | Block a scan with more selected files. |
+| `max_scan_text_bytes` | `65536` | Block a scan with more total text bytes. |
 | `mode` | `edit` | Select read-only or approval-gated local file tools. |
 | `routing` | `project` | Use one project conversation or one conversation per file. |
 | `state_dir` | `.hypervigilant` | Store private snapshots and route IDs. |

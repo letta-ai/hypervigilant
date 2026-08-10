@@ -122,6 +122,9 @@ describe("scan command", () => {
     expect(calls[0]?.messages[0]).toContain("# Existing project");
     expect(calls[0]?.messages[0]).toContain("INITIAL ADD PROMPT");
     expect(calls[0]?.messages[0]).not.toContain("CHANGE PROMPT");
+    expect(statuses).toContain(
+      "Scan preflight: 1/100 files. Text: 1 file, 19/65,536 bytes, estimated 5-19 tokens. Binary: 0 files, 0 bytes, metadata only.",
+    );
     expect(statuses).toContain("Sending 1 existing file to the agent: README.md");
     expect(statuses).toContain("Scan complete.");
 
@@ -155,16 +158,20 @@ describe("scan command", () => {
     expect(scannedState?.snapshots["removed.md"]).toBeUndefined();
   });
 
-  it("keeps binary bytes and hashes out of delivery messages", async () => {
-    await writeConfig('\ninclude = ["**/*.png"]\n');
+  it("keeps binary bytes out of the text budget and delivery messages", async () => {
+    await writeConfig('\ninclude = ["**/*.png"]\nmax_scan_text_bytes = 1\n');
     await writeFile(
       join(root, "photo.png"),
       Buffer.from([0x53, 0x45, 0x43, 0x00, 0x52, 0x45, 0x54]),
     );
     const { client, calls } = fakeClient();
+    const statuses: string[] = [];
 
-    await scan(client);
+    await scan(client, statuses);
 
+    expect(statuses).toContain(
+      "Scan preflight: 1/100 files. Text: 0 files, 0/1 bytes, estimated 0-0 tokens. Binary: 1 file, 7 bytes, metadata only.",
+    );
     const state = await new StateStore({ stateDir: join(root, ".hypervigilant") }).load();
     const snapshot = state?.snapshots["photo.png"];
     expect(snapshot).toMatchObject({ kind: "binary", content: null, size: 7 });
@@ -194,6 +201,25 @@ describe("scan command", () => {
     expect(status.watcherActive).toBe(false);
     expect(status.merged).toBe(true);
     await cleanupIsolatedWorktree(root, config);
+  });
+
+  it("blocks aggregate file and text budgets before delivery", async () => {
+    await writeConfig("\nmax_scan_files = 1\nmax_scan_text_bytes = 4\n");
+    await writeFile(join(root, "a.md"), "12345");
+    await writeFile(join(root, "b.md"), "67890");
+    const { client, calls } = fakeClient();
+    const statuses: string[] = [];
+
+    await expect(scan(client, statuses)).rejects.toThrow(
+      "2 files exceeds max_scan_files 1. 10 text bytes exceeds max_scan_text_bytes 4",
+    );
+
+    expect(calls).toHaveLength(0);
+    expect(statuses).toContain(
+      "Scan preflight: 2/1 files. Text: 2 files, 10/4 bytes, estimated 3-10 tokens. Binary: 0 files, 0 bytes, metadata only.",
+    );
+    const state = await new StateStore({ stateDir: join(root, ".hypervigilant") }).load();
+    expect(state?.snapshots).toEqual({});
   });
 
   it("does not advance a failed scan", async () => {

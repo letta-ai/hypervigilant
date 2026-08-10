@@ -30,6 +30,8 @@ describe("config", () => {
           "**/.hypervigilant/**",
         ]);
         expect(result.data.maxFileSizeBytes).toBe(1_048_576);
+        expect(result.data.maxScanFiles).toBe(100);
+        expect(result.data.maxScanTextBytes).toBe(65_536);
         expect(result.data.batching.strategy).toBe("debounce");
         expect(result.data.batching.delayMs).toBe(500);
         expect(result.data.batching.maxWaitMs).toBe(5000);
@@ -55,6 +57,8 @@ describe("config", () => {
         include: ["**/*.ts"],
         exclude: ["**/dist/**"],
         maxFileSizeBytes: 512_000,
+        maxScanFiles: 25,
+        maxScanTextBytes: 32_768,
         batching: {
           strategy: "fixed-window",
           delayMs: 1000,
@@ -298,6 +302,8 @@ agent_id = "agent-demo"
 include = ["SPEC.md", "src/**/*.ts"]
 exclude = [".hypervigilant/**"]
 max_file_size_bytes = 2048
+max_scan_files = 12
+max_scan_text_bytes = 4096
 mode = "review"
 routing = "per-file"
 state_dir = ".state"
@@ -330,6 +336,8 @@ conversation = "spec-review"
       const config = await loadConfig(path);
       expect(config.agentId).toBe("agent-demo");
       expect(config.maxFileSizeBytes).toBe(2048);
+      expect(config.maxScanFiles).toBe(12);
+      expect(config.maxScanTextBytes).toBe(4096);
       expect(config.stateDir).toBe(".state");
       expect(config.batching).toEqual({
         strategy: "fixed-window",

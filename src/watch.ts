@@ -419,7 +419,46 @@ async function initializeCommandState(
         : `Found ${pendingChanges.length} change(s) made while stopped.`,
     );
   }
+  if (commandMode === "scan") enforceScanBudget(pendingChanges, config, onStatus);
   return { state, pendingChanges };
+}
+
+function enforceScanBudget(
+  changes: FileChange[],
+  config: Pick<HypervigilantConfig, "maxScanFiles" | "maxScanTextBytes">,
+  onStatus: WatchOptions["onStatus"],
+): void {
+  let textFiles = 0;
+  let textBytes = 0;
+  let binaryFiles = 0;
+  let binaryBytes = 0;
+  for (const change of changes) {
+    if (change.kind === "binary") {
+      binaryFiles += 1;
+      binaryBytes += change.size ?? 0;
+    } else {
+      textFiles += 1;
+      textBytes += change.size ?? 0;
+    }
+  }
+  const number = (value: number) => value.toLocaleString("en-US");
+  const files = (value: number) => `${number(value)} ${value === 1 ? "file" : "files"}`;
+  onStatus?.(
+    `Scan preflight: ${number(changes.length)}/${number(config.maxScanFiles)} files. Text: ${files(textFiles)}, ${number(textBytes)}/${number(config.maxScanTextBytes)} bytes, estimated ${number(Math.ceil(textBytes / 4))}-${number(textBytes)} tokens. Binary: ${files(binaryFiles)}, ${number(binaryBytes)} bytes, metadata only.`,
+  );
+  const violations = [
+    changes.length > config.maxScanFiles
+      ? `${changes.length} files exceeds max_scan_files ${config.maxScanFiles}`
+      : null,
+    textBytes > config.maxScanTextBytes
+      ? `${textBytes} text bytes exceeds max_scan_text_bytes ${config.maxScanTextBytes}`
+      : null,
+  ].filter((value): value is string => value !== null);
+  if (violations.length > 0) {
+    throw new Error(
+      `Scan blocked before delivery. ${violations.join(". ")}. Narrow the include and exclude globs or raise the limits intentionally.`,
+    );
+  }
 }
 
 export function formatDeliveryStatus(changes: Array<Pick<FileChange, "relPath">>): string {
