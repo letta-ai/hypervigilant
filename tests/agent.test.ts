@@ -454,6 +454,7 @@ describe("agent", () => {
         include: [...REVIEW_TOOLS],
       });
       expect(calls[0]?.options.env).toEqual(options.runtimeEnv);
+      expect(calls[0]?.options.model).toBeUndefined();
       expect(calls[0]?.messages[0]).toContain("a.md");
       expect(calls[0]?.messages[0]).toContain("b.md");
       expect(calls[0]?.messages[0]).toContain("Compare changes with SPEC.md.");
@@ -463,6 +464,50 @@ describe("agent", () => {
       expect(calls[0]?.messages[0]).not.toContain("Configured local client tools:");
       expect(delivery.newState.projectConversation.conversationId).toBe("conv-new-1");
       expect(delivery.deliveredPaths).toEqual(["a.md", "b.md"]);
+    });
+
+    it("applies the configured model to created and resumed conversation routes", async () => {
+      const { client, calls } = fakeClient();
+      const promptRules = [
+        {
+          name: "security-review",
+          match: ["src/**"],
+          events: ["change" as const],
+          prompt: "Review security.",
+          conversation: "security",
+        },
+      ];
+
+      const created = await deliverBatch(
+        client,
+        {
+          version: 1,
+          agentId: "agent-xxx",
+          projectConversation: { conversationId: null },
+          fileConversations: {},
+          snapshots: {},
+        },
+        [change("src/new.ts")],
+        { ...options, model: "auto", promptRules },
+      );
+      await deliverBatch(client, created.newState, [change("src/new.ts")], {
+        ...options,
+        model: "openai/gpt-5",
+        promptRules,
+      });
+
+      expect(calls.map((call) => [call.kind, call.options.model])).toEqual([
+        ["create", "auto"],
+        ["create", "auto"],
+        ["resume", "openai/gpt-5"],
+        ["resume", "openai/gpt-5"],
+      ]);
+      expect(calls.map((call) => call.id)).toEqual([
+        "agent-xxx",
+        "agent-xxx",
+        "conv-new-1",
+        "conv-new-2",
+      ]);
     });
 
     it("delivers binary metadata with an explicitly enabled image tool", async () => {
@@ -667,10 +712,11 @@ describe("agent", () => {
           snapshots: {},
         },
         [change("a.md"), change("b.md")],
-        { ...options, routing: "per-file" },
+        { ...options, model: "auto", routing: "per-file" },
       );
 
       expect(calls.map((call) => call.kind)).toEqual(["create", "create"]);
+      expect(calls.map((call) => call.options.model)).toEqual(["auto", "auto"]);
       expect(calls[0]?.messages[0]).toContain("a.md");
       expect(calls[0]?.messages[0]).not.toContain("b.md");
       expect(calls[1]?.messages[0]).toContain("b.md");

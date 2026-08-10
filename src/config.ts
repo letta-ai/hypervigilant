@@ -143,6 +143,11 @@ export const configSchema = z
       .refine((value) => value !== "agent-REPLACE-ME", {
         message: "Replace agent-REPLACE-ME with a real Letta agent ID.",
       }),
+    model: z
+      .string()
+      .min(1)
+      .refine((value) => value.trim().length > 0, "Model cannot be blank.")
+      .optional(),
     include: z.array(z.string().min(1)).default(["**/*.md", "**/*.txt"]),
     exclude: z
       .array(z.string().min(1))
@@ -200,6 +205,7 @@ const TOML_TOP_LEVEL_KEYS: Record<string, keyof HypervigilantConfig> = {
   version: "version",
   project: "project",
   agent_id: "agentId",
+  model: "model",
   include: "include",
   exclude: "exclude",
   max_file_size_bytes: "maxFileSizeBytes",
@@ -384,6 +390,9 @@ export function serializeConfigToml(config: HypervigilantConfig): string {
     "version = 1",
     `project = ${tomlString(config.project)}`,
     `agent_id = ${tomlString(config.agentId)}`,
+  ];
+  if (config.model) lines.push(`model = ${tomlString(config.model)}`);
+  lines.push(
     `include = ${tomlStringArray(config.include)}`,
     `exclude = ${tomlStringArray(config.exclude)}`,
     `max_file_size_bytes = ${config.maxFileSizeBytes}`,
@@ -392,7 +401,7 @@ export function serializeConfigToml(config: HypervigilantConfig): string {
     `mode = ${tomlString(config.mode)}`,
     `routing = ${tomlString(config.routing)}`,
     `state_dir = ${tomlString(config.stateDir)}`,
-  ];
+  );
   if (config.instructions) lines.push(`instructions = ${tomlString(config.instructions)}`);
   lines.push(
     "",

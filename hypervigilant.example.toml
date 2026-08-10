@@ -2,6 +2,7 @@
 version = 1
 project = "my-project"
 agent_id = "agent-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+model = "auto"
 include = ["**/*.md", "**/*.txt"]
 exclude = ["**/node_modules/**", "**/.git/**", ".hypervigilant/**", "**/.hypervigilant/**"]
 max_file_size_bytes = 1048576

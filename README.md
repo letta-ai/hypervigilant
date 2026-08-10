@@ -209,7 +209,10 @@ Hypervigilant reads `hypervigilant.toml` from the watched project root. A config
 version = 1
 project = "my-project"
 agent_id = "agent-xxx"
+model = "auto"
 ```
+
+`model` is optional. It selects the model for project, per-file, and named conversations that Hypervigilant creates or resumes. It does not change the agent's default model or unrelated conversations. If you omit it, each watcher conversation keeps its existing effective model.
 
 The remaining fields have defaults. See the following files for the complete configuration:
 
@@ -221,6 +224,7 @@ Legacy `hypervigilant.json` files load only when no TOML file exists.
 | Configuration key | Default | Purpose |
 | --- | --- | --- |
 | `include` | Markdown and text files | Select project-relative paths. |
+| `model` | inherited | Select the model for Hypervigilant-owned conversations only. |
 | `exclude` | Git, `node_modules`, and state paths | Remove matching paths from the watch set. |
 | `max_file_size_bytes` | `1048576` | Skip files above this size. |
 | `max_scan_files` | `100` | Block a scan with more selected files. |
