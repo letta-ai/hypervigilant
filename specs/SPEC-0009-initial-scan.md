@@ -63,6 +63,6 @@ Let a user send files already present in a configured project to the agent. The 
 
 - `src/watch.ts` runs the shared one-shot and continuous delivery path.
 - `src/cli.ts` exposes `hypervigilant scan`.
-- `tests/scan.test.ts` covers scan delivery, repeated scans, binary safety, failure, mutations, and worktree cleanup.
+- `tests/scan.test.ts` covers scan delivery, repeated scans, binary safety, failure, state cleanup, and worktree cleanup.
 - `tests/live.test.ts` contains the opt-in Agent SDK acceptance check.
 - `README.md` documents scan setup, behavior, commands, and limits.
