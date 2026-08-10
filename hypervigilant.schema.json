@@ -44,6 +44,18 @@
       "default": 1048576,
       "description": "Maximum watched-file size in bytes."
     },
+    "max_scan_files": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 100,
+      "description": "Maximum number of files in one scan."
+    },
+    "max_scan_text_bytes": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 65536,
+      "description": "Maximum total text bytes in one scan. Binary files send metadata only and do not count toward this limit."
+    },
     "mode": {
       "type": "string",
       "enum": ["review", "edit"],

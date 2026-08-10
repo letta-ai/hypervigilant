@@ -1,5 +1,5 @@
 ---
-id: SPEC-0009
+id: SPEC-0011
 title: Obsidian vault steward demo
 status: implemented
 dependencies: [SPEC-0000, SPEC-0001, SPEC-0003]

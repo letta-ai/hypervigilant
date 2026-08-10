@@ -53,6 +53,14 @@ bun run dev -- init ~/hypervigilant-demo \
   --project hypervigilant-demo
 ```
 
+To send files that already exist in the directory, run one scan:
+
+```bash
+bun run dev -- scan ~/hypervigilant-demo
+```
+
+A scan sends every current file selected by the configuration and exits. A later watcher reuses the saved snapshots and conversation routes. Another scan sends the selected files again.
+
 Build and link the command to use `hypervigilant` directly:
 
 ```bash
@@ -63,7 +71,7 @@ hypervigilant help
 
 ## What Hypervigilant does
 
-- Watches code, notes, documentation, configuration, prose, and file inboxes.
+- Sends existing matching files once or watches for later changes.
 - Resumes one project conversation, one conversation per file, or named specialist conversations.
 - Gives the default conversation guarded local file tools under `review`, `ask`, or `yolo` policy.
 - Lets attached Letta tools react to a change through their existing tool rules.
@@ -77,6 +85,8 @@ hypervigilant help
 5. It suppresses agent file writes from the watcher and records their final state.
 
 Hypervigilant detects changes made while it was stopped at the next startup. Agent turns run sequentially.
+
+`scan` uses the same file selection, routes, permissions, and state. It presents each current file as an `add` event. Before delivery, it prints file, byte, and estimated token totals. It blocks scans above the configured file or text-byte limits. After success, it removes stale matching snapshots without reporting deletion events.
 
 ## Examples
 
@@ -213,6 +223,8 @@ Legacy `hypervigilant.json` files load only when no TOML file exists.
 | `include` | Markdown and text files | Select project-relative paths. |
 | `exclude` | Git, `node_modules`, and state paths | Remove matching paths from the watch set. |
 | `max_file_size_bytes` | `1048576` | Skip files above this size. |
+| `max_scan_files` | `100` | Block a scan with more selected files. |
+| `max_scan_text_bytes` | `65536` | Block a scan with more total text bytes. |
 | `mode` | `edit` | Select read-only or approval-gated local file tools. |
 | `routing` | `project` | Use one project conversation or one conversation per file. |
 | `state_dir` | `.hypervigilant` | Store private snapshots and route IDs. |
@@ -233,7 +245,7 @@ Batching supports the following strategies:
 
 Prompt rules match `add`, `change`, and `delete` events. They add message text but cannot grant tools or change permissions.
 
-Restart the watcher after you change prompt rules, tools, or other project configuration.
+Restart the watcher after you change project configuration. Each scan loads the current configuration before delivery.
 
 ## Permissions and tools
 
@@ -334,7 +346,7 @@ The following rules protect delivery and local files:
 - Agent file writes do not trigger feedback deliveries.
 - Binary event prompts and snapshots do not contain file bytes.
 - Worktree commits contain only delivered paths and approved mutation paths.
-- Process locks prevent overlapping worktree watchers, merges, and cleanup.
+- Process locks prevent overlapping worktree scans, watchers, merges, and cleanup.
 
 ## Demos
 
@@ -358,6 +370,8 @@ bun run demo:obsidian-watcher
 
 ```text
 hypervigilant init [path]                    Create project configuration
+hypervigilant scan [path]                    Send matching files once and exit
+hypervigilant status [path]                  Show read-only configuration and state overview
 hypervigilant watch [path]                   Start the watcher
 hypervigilant watch [path] --config FILE     Use another config file
 hypervigilant permissions ...                Inspect or change runtime policy
@@ -368,12 +382,21 @@ hypervigilant version                        Print the installed version
 hypervigilant help                           Show all commands and flags
 ```
 
+### Status overview
+
+Show configuration, file selection, snapshot state, routing, and worktree status without contacting the Letta API or mutating state:
+
+```bash
+hypervigilant status /path/to/project
+```
+
 ## Limits
 
 - Binary classification checks for null bytes in the first 8 KiB. Hypervigilant can treat other binary formats as text.
 - A rename appears as a deletion and an addition.
 - Batching reports the net change instead of each intermediate save.
-- Prompt rules and tool configuration load when the watcher starts.
+- With project routing, a scan sends all matching files to the default conversation in one turn.
+- Prompt rules and tool configuration load when each scan or watcher starts.
 - Agent turns and named specialist turns run sequentially.
 - One watcher and one isolated worktree can own a state directory.
 - The JSON state store rewrites stored text snapshots as one file. Storage cost grows with total watched text.

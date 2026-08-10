@@ -148,6 +148,8 @@ export const configSchema = z
       .array(z.string().min(1))
       .default(["**/node_modules/**", "**/.git/**", ".hypervigilant/**", "**/.hypervigilant/**"]),
     maxFileSizeBytes: z.number().int().min(1).default(1_048_576),
+    maxScanFiles: z.number().int().min(1).default(100),
+    maxScanTextBytes: z.number().int().min(1).default(65_536),
     batching: batchingConfigSchema.default(() => ({
       strategy: "debounce" as const,
       delayMs: 500,
@@ -201,6 +203,8 @@ const TOML_TOP_LEVEL_KEYS: Record<string, keyof HypervigilantConfig> = {
   include: "include",
   exclude: "exclude",
   max_file_size_bytes: "maxFileSizeBytes",
+  max_scan_files: "maxScanFiles",
+  max_scan_text_bytes: "maxScanTextBytes",
   batching: "batching",
   mode: "mode",
   routing: "routing",
@@ -383,6 +387,8 @@ export function serializeConfigToml(config: HypervigilantConfig): string {
     `include = ${tomlStringArray(config.include)}`,
     `exclude = ${tomlStringArray(config.exclude)}`,
     `max_file_size_bytes = ${config.maxFileSizeBytes}`,
+    `max_scan_files = ${config.maxScanFiles}`,
+    `max_scan_text_bytes = ${config.maxScanTextBytes}`,
     `mode = ${tomlString(config.mode)}`,
     `routing = ${tomlString(config.routing)}`,
     `state_dir = ${tomlString(config.stateDir)}`,
