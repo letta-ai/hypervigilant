@@ -511,11 +511,10 @@ Run the complete local checks:
 
 ```bash
 bun install
-bun run check
-bun run test:demo
-bun audit
-npm pack --dry-run
+bun run quality
 ```
+
+`quality` runs the specification, type, lint, unit, build, demo, dependency-audit, package-manifest, and staged/unstaged diff gates. It also fails if the gate rewrites generated build or specification output that was already present when the run began; inspect and retain that output, then rerun it. Creating ignored build output in a fresh checkout is expected.
 
 The opt-in live suite creates a real Agent SDK session and archives its temporary conversations:
 

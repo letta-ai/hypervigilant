@@ -50,7 +50,8 @@
     "test:live": "HYPERVIGILANT_LIVE_TEST=1 bun test tests/live.test.ts",
     "spec:check": "bun run scripts/check-specs.ts",
     "spec:update": "bun run scripts/check-specs.ts --update",
-    "check": "bun run spec:check && bun run typecheck && bun run lint && bun run test && bun run build"
+    "check": "bun run spec:check && bun run typecheck && bun run lint && bun run test && bun run build",
+    "quality": "bun run scripts/quality.ts"
   },
   "keywords": [
     "letta",
