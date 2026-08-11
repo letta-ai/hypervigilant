@@ -34,6 +34,7 @@ function makeConfig(o: Partial<HypervigilantConfig> = {}): HypervigilantConfig {
     },
     ...o,
     connection: o.connection ?? { backend: "cloud" },
+    destinations: o.destinations ?? { agent: true },
     promptRules: o.promptRules ?? [],
     tools: o.tools ?? { autoAllow: [], ask: [] },
   };
@@ -82,7 +83,7 @@ describe("status", () => {
     await writeFile(join(testRoot, "image.png"), Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x01]));
     const config = makeConfig({ include: ["**/*.md", "**/*.png"] });
     await writeConfig(testRoot, config);
-    let state = baseState(config.agentId);
+    let state = baseState(config.agentId ?? "agent-test-id");
     state = setSnapshot(state, "indexed.md", await hashContent("unchanged\n"), 10, "unchanged\n");
     state = setSnapshot(state, "changed.md", await hashContent("original\n"), 9, "original\n");
     state = setSnapshot(state, "stale.md", await hashContent("gone\n"), 6, "gone\n");
@@ -164,7 +165,7 @@ describe("status", () => {
     });
     await writeConfig(testRoot, config);
     await saveState(testRoot, config.stateDir, {
-      ...baseState(config.agentId),
+      ...baseState(config.agentId ?? "agent-test-id"),
       connectionKey: "local",
       projectConversation: { conversationId: "local-conversation" },
     });
@@ -180,7 +181,7 @@ describe("status", () => {
     const config = makeConfig();
     await writeConfig(testRoot, config);
     let state: HypervigilantState = {
-      ...baseState(config.agentId),
+      ...baseState(config.agentId ?? "agent-test-id"),
       projectConversation: { conversationId: "conv-orig" },
     };
     state = setSnapshot(state, "file0.md", await hashContent("secret-0\n"), 9, "secret-0\n");

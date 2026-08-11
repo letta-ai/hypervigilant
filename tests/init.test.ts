@@ -51,6 +51,37 @@ describe("initCommand", () => {
     expect(await readFile(result.configPath, "utf8")).toContain('backend = "local"');
   });
 
+  it("writes an HTTP-only configuration without creating an agent", async () => {
+    const result = await initCommand({
+      path: root,
+      project: "events",
+      eventOnly: true,
+      httpDestination: {
+        url: "https://stream.example.com/v1/events",
+        authTokenEnv: "STREAM_TOKEN",
+        requestTimeoutMs: 2_000,
+      },
+      nonInteractive: true,
+    });
+    const saved = await loadConfig(result.configPath);
+    const source = await readFile(result.configPath, "utf8");
+    expect(result.agentId).toBeUndefined();
+    expect(saved.agentId).toBeUndefined();
+    expect(saved.destinations).toEqual({
+      agent: false,
+      http: {
+        url: "https://stream.example.com/v1/events",
+        authTokenEnv: "STREAM_TOKEN",
+        requestTimeoutMs: 2_000,
+      },
+    });
+    expect(source).not.toContain("agent_id");
+    expect(source).not.toContain("[connection]");
+    expect(source).not.toContain("[tools]");
+    expect(source).toContain("[destinations.http]");
+    expect(source).not.toContain("private-token-value");
+  });
+
   it("defaults a non-shared remote App Server to diff-only review", async () => {
     const result = await initCommand({
       path: root,

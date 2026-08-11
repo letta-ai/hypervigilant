@@ -15,3 +15,4 @@
 | SPEC-0010 | Read-only status overview | implemented | SPEC-0000, SPEC-0001, SPEC-0005, SPEC-0008 |
 | SPEC-0011 | Conversation-scoped model selection | implemented | SPEC-0000, SPEC-0005 |
 | SPEC-0012 | Self-hosted agent backends | implemented | SPEC-0000, SPEC-0001, SPEC-0003, SPEC-0005 |
+| SPEC-0013 | Durable HTTP event destination | implemented | SPEC-0000, SPEC-0001, SPEC-0008, SPEC-0009, SPEC-0010, SPEC-0012 |

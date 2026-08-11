@@ -3,8 +3,11 @@ import { isAbsolute, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { CanUseToolContext, CanUseToolResponse } from "@letta-ai/letta-agent-sdk";
 import { renderDiffPreviews } from "./approval-diff.ts";
+import { resolveEnvironmentValue } from "./auth.ts";
 import {
   connectionConfigSchema,
+  type HttpEventDestinationConfig,
+  httpEventDestinationSchema,
   LETTA_BACKENDS,
   type LettaBackend,
   type LettaConnectionConfig,
@@ -118,6 +121,10 @@ async function runInit(args: string[]): Promise<void> {
       "server-url": { type: "string" },
       "auth-token-env": { type: "string" },
       "shared-filesystem": { type: "boolean" },
+      "event-url": { type: "string" },
+      "event-auth-token-env": { type: "string" },
+      "event-timeout-ms": { type: "string" },
+      "event-only": { type: "boolean" },
       project: { type: "string" },
       include: { type: "string", multiple: true },
       exclude: { type: "string", multiple: true },
@@ -146,6 +153,50 @@ async function runInit(args: string[]): Promise<void> {
     throw new Error(
       `Invalid batching: ${values.batching}. Use "debounce", "fixed-window", or "immediate".`,
     );
+  }
+  if (values["event-only"] && (values["agent-id"] || values["create-agent"])) {
+    throw new Error("--event-only cannot be combined with --agent-id or --create-agent.");
+  }
+  if (
+    values["event-only"] &&
+    (values.backend ||
+      values["server-url"] ||
+      values["auth-token-env"] ||
+      values["shared-filesystem"] ||
+      values.mode ||
+      values.routing ||
+      values.worktree)
+  ) {
+    throw new Error(
+      "--event-only cannot be combined with agent backend, mode, routing, or worktree options.",
+    );
+  }
+  if (values["event-only"] && !values["event-url"]) {
+    throw new Error("--event-only requires --event-url.");
+  }
+  if (!values["event-url"] && values["event-auth-token-env"]) {
+    throw new Error("--event-auth-token-env requires --event-url.");
+  }
+  if (!values["event-url"] && values["event-timeout-ms"]) {
+    throw new Error("--event-timeout-ms requires --event-url.");
+  }
+
+  let httpDestination: HttpEventDestinationConfig | undefined;
+  if (values["event-url"]) {
+    const requestTimeoutMs = values["event-timeout-ms"]
+      ? Number(values["event-timeout-ms"])
+      : 10_000;
+    const destinationResult = httpEventDestinationSchema.safeParse({
+      url: values["event-url"],
+      authTokenEnv: values["event-auth-token-env"],
+      requestTimeoutMs,
+    });
+    if (!destinationResult.success) {
+      throw new Error(
+        `Invalid HTTP event destination: ${destinationResult.error.issues.map((issue) => issue.message).join("; ")}`,
+      );
+    }
+    httpDestination = destinationResult.data;
   }
 
   const backend = (values.backend ?? "cloud") as LettaBackend;
@@ -197,6 +248,8 @@ async function runInit(args: string[]): Promise<void> {
       agentId: values["agent-id"],
       connection,
       createAgent: values["create-agent"],
+      httpDestination,
+      eventOnly: values["event-only"],
       project: values.project,
       include: values.include,
       exclude: values.exclude,
@@ -211,14 +264,19 @@ async function runInit(args: string[]): Promise<void> {
   );
 
   log(`Configuration written to ${result.configPath}`);
-  log(`Agent ID: ${result.agentId}`);
-  log(`Connection: ${result.config.connection.backend}`);
+  log(`Agent: ${result.config.destinations.agent ? result.agentId : "disabled"}`);
+  if (result.config.destinations.agent) log(`Connection: ${result.config.connection.backend}`);
+  if (result.config.destinations.http) {
+    log(`HTTP destination: ${result.config.destinations.http.url}`);
+  }
   log(`Project: ${result.config.project}`);
-  log(`Mode: ${result.config.mode}`);
-  log(`Routing: ${result.config.routing}`);
-  log(
-    `Workspace: ${result.config.worktree.enabled ? "isolated Git worktree" : "project checkout"}`,
-  );
+  if (result.config.destinations.agent) {
+    log(`Mode: ${result.config.mode}`);
+    log(`Routing: ${result.config.routing}`);
+    log(
+      `Workspace: ${result.config.worktree.enabled ? "isolated Git worktree" : "project checkout"}`,
+    );
+  }
   log("Ready. Run `hypervigilant scan` once or `hypervigilant watch` continuously.");
 }
 
@@ -249,12 +307,33 @@ async function runDeliveryCommand(args: string[], command: "watch" | "scan"): Pr
   const projectRoot = resolve(path ?? process.cwd());
   const configPath = resolveConfigPath(projectRoot, values.config).path;
   const config = await loadConfig(configPath);
+  const eventRuntimeEnv: Record<string, string> = {};
+  const eventTokenEnv = config.destinations.http?.authTokenEnv;
+  if (eventTokenEnv) {
+    eventRuntimeEnv[eventTokenEnv] = resolveEnvironmentValue(eventTokenEnv, [
+      projectRoot,
+      process.cwd(),
+    ]);
+  }
+  if (!config.destinations.agent) {
+    const options = {
+      path,
+      configPath,
+      runtimeEnv: {},
+      eventEnv: eventRuntimeEnv,
+      onStatus: log,
+      onError: logError,
+    };
+    await (command === "scan" ? scanCommand(options) : watchCommand(options));
+    return;
+  }
   const plan = resolveConnectionPlan(config.connection, [projectRoot, process.cwd()]);
   const clients = await createConnectionClients(plan);
   const options = {
     path,
     configPath,
     runtimeEnv: plan.runtimeEnv,
+    eventEnv: eventRuntimeEnv,
     connectionLabel: plan.description,
     validateAgent: async (agentId: string) => {
       await validateConnectionAgent(clients, agentId);
@@ -355,6 +434,9 @@ async function runPermissions(args: string[]): Promise<void> {
   const projectRoot = resolve(positionals[0] ?? process.cwd());
   const configPath = resolveConfigPath(projectRoot, values.config).path;
   const config = await loadConfig(configPath);
+  if (!config.destinations.agent) {
+    throw new Error("Permission policies are unavailable because agent delivery is disabled.");
+  }
 
   if (action === "reset") {
     await resetPermissionPolicy(projectRoot, config);
@@ -528,7 +610,7 @@ async function main(): Promise<void> {
 
 function printHelp(): void {
   console.log(`
-hypervigilant — Trigger persistent Letta agents from file changes.
+hypervigilant — Deliver saved file changes to agents and event receivers.
 
 Usage:
   hypervigilant init [path] [options]
@@ -542,9 +624,9 @@ Usage:
 
 Commands:
   init       Create a configuration file and optionally create a Letta agent.
-  scan       Send current matching files to the agent once, then exit.
+  scan       Deliver current matching files once, then exit.
   status     Show a read-only overview of configuration, state, and routing.
-  watch      Start watching files and delivering diffs to the agent.
+  watch      Start watching files and delivering saved-change batches.
   worktree   Inspect, merge, or remove the isolated worktree.
   permissions Show or change the runtime edit policy.
   prompts     List prompt rules or test a path without contacting an agent.
@@ -556,6 +638,10 @@ Init options:
   --server-url <url>      User-managed App Server URL for the remote backend.
   --auth-token-env <name> Environment variable containing the App Server bearer token.
   --shared-filesystem     Remote App Server sees this project at the same absolute path.
+  --event-url <url>       Add a generic HTTP event destination.
+  --event-auth-token-env <name> Environment variable containing its bearer token.
+  --event-timeout-ms <ms> HTTP request timeout. Default: 10000.
+  --event-only            Disable Letta agent delivery. Requires --event-url.
   --project <name>        Project name.
   --include <glob>        Include glob. Repeat this option for more globs.
   --exclude <glob>        Exclude glob. Repeat this option for more globs.
@@ -594,6 +680,7 @@ Prompt commands:
 Environment:
   LETTA_API_KEY            Required only for the cloud backend.
   LETTA_APP_SERVER_TOKEN   Suggested bearer-token variable for an authenticated remote server.
+  HTTP event token         The variable named by destinations.http.auth_token_env.
   Local backend            Uses provider connections already configured in Letta Code.
 
 Examples:
@@ -601,6 +688,7 @@ Examples:
   hypervigilant init /path/to/project --create-agent --mode edit
   hypervigilant init /path/to/project --backend local --create-agent
   hypervigilant init /path/to/project --backend remote --server-url ws://127.0.0.1:4500 --agent-id agent-local-xxx
+  hypervigilant init /path/to/project --event-only --event-url https://stream.example.com/v1/events --event-auth-token-env STREAM_TOKEN
   hypervigilant scan /path/to/project
   hypervigilant status /path/to/project
   hypervigilant watch /path/to/project

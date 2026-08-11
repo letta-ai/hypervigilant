@@ -3,6 +3,7 @@ import { existsSync, lstatSync, realpathSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
+import { eventOutputStateSchema } from "./event-schema.ts";
 
 /* ──────────────────────────── Schema ────────────────────────────── */
 
@@ -29,7 +30,7 @@ const conversationStateSchema = z.object({
 
 export const stateSchema = z.object({
   version: z.literal(1).default(1),
-  agentId: z.string(),
+  agentId: z.string().optional(),
   /** Missing in state written before connection backends were configurable. */
   connectionKey: z.string().optional(),
   projectConversation: conversationStateSchema.default({
@@ -43,6 +44,8 @@ export const stateSchema = z.object({
   snapshots: z.record(z.string(), fileSnapshotSchema).default({}),
   /** Missing in state written before metadata-only binary events existed. */
   binaryBaselineEstablished: z.boolean().optional(),
+  /** Durable identity, outbox, and receipt state for generic HTTP delivery. */
+  eventOutput: eventOutputStateSchema.optional(),
 });
 
 export type FileSnapshot = z.input<typeof fileSnapshotSchema>;
@@ -246,7 +249,7 @@ export function setProjectConversation(
 /** Reset every conversation route when the configured agent changes. */
 export function resetConversationRoutes(
   state: HypervigilantState,
-  agentId: string,
+  agentId: string | undefined,
   connectionKey = "cloud",
 ): HypervigilantState {
   return {

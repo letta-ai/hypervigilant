@@ -34,6 +34,7 @@ describe("config", () => {
         expect(result.data.maxScanFiles).toBe(100);
         expect(result.data.maxScanTextBytes).toBe(65_536);
         expect(result.data.connection).toEqual({ backend: "cloud" });
+        expect(result.data.destinations).toEqual({ agent: true });
         expect(result.data.batching.strategy).toBe("debounce");
         expect(result.data.batching.delayMs).toBe(500);
         expect(result.data.batching.maxWaitMs).toBe(5000);
@@ -147,6 +148,66 @@ describe("config", () => {
       expect(placeholder.success).toBe(false);
       if (!placeholder.success) {
         expect(placeholder.error.issues[0]?.message).toContain("real Letta agent ID");
+      }
+    });
+
+    it("allows HTTP-only delivery without an agent and rejects an empty destination set", () => {
+      expect(
+        configSchema.safeParse({
+          version: 1,
+          project: "events",
+          destinations: {
+            agent: false,
+            http: { url: "http://127.0.0.1:8080/v1/events" },
+          },
+        }).success,
+      ).toBe(true);
+      expect(
+        configSchema.safeParse({
+          version: 1,
+          project: "events",
+          destinations: { agent: false },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          version: 1,
+          project: "events",
+          destinations: {
+            agent: false,
+            http: { url: "http://127.0.0.1:8080/v1/events" },
+          },
+          worktree: { enabled: true },
+        }).success,
+      ).toBe(false);
+    });
+
+    it("validates HTTP event destination transport and credential boundaries", () => {
+      const base = { version: 1, project: "events", destinations: { agent: false } };
+      const valid = [
+        { url: "http://127.0.0.1:8080/v1/events" },
+        { url: "http://localhost:8080/v1/events" },
+        { url: "https://stream.example.com/v1/events", authTokenEnv: "STREAM_TOKEN" },
+      ];
+      for (const http of valid) {
+        expect(
+          configSchema.safeParse({ ...base, destinations: { agent: false, http } }).success,
+        ).toBe(true);
+      }
+      const invalid = [
+        { url: "http://stream.example.com/v1/events", authTokenEnv: "STREAM_TOKEN" },
+        { url: "https://stream.example.com/v1/events" },
+        { url: "https://user:secret@stream.example.com/v1/events", authTokenEnv: "STREAM_TOKEN" },
+        { url: "https://stream.example.com/v1/events?token=secret", authTokenEnv: "STREAM_TOKEN" },
+        { url: "https://stream.example.com/v1/events#fragment", authTokenEnv: "STREAM_TOKEN" },
+        { url: "wss://stream.example.com/v1/events", authTokenEnv: "STREAM_TOKEN" },
+        { url: "https://stream.example.com/v1/events", authTokenEnv: "bad-name" },
+        { url: "https://stream.example.com/v1/events", authTokenEnv: "STREAM_TOKEN", typo: 1 },
+      ];
+      for (const http of invalid) {
+        expect(
+          configSchema.safeParse({ ...base, destinations: { agent: false, http } }).success,
+        ).toBe(false);
       }
     });
 

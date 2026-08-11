@@ -1,10 +1,10 @@
 # Hypervigilant
 
-**Trigger persistent Letta agents from file changes.**
+**Deliver saved file changes to persistent agents and durable event receivers.**
 
-Hypervigilant watches selected local files and sends each saved change to a persistent [Letta Agent SDK](https://docs.letta.com/agent-sdk) conversation. Text files produce unified diffs. Binary files produce metadata events.
+Hypervigilant watches selected local files and delivers each saved batch to a persistent [Letta Agent SDK](https://docs.letta.com/agent-sdk) conversation, a generic authenticated HTTP event receiver, or both. Agent turns receive unified text diffs and binary metadata. HTTP receivers receive strict versioned file events.
 
-The agent can review changes, use attached Letta tools, or use guarded local file tools. Conversations and delivered-file state survive watcher restarts.
+Agent conversations, delivered-file state, and pending HTTP events survive watcher restarts.
 
 ## Quick start
 
@@ -67,6 +67,51 @@ Build and link the command to use `hypervigilant` directly:
 bun run build
 bun link
 hypervigilant help
+```
+
+## HTTP event destinations
+
+HTTP delivery lets Hypervigilant act as a filesystem producer without asking a model to process every save. The receiver can append the event to another durable system and decide when cognition is warranted.
+
+Initialize an HTTP-only project:
+
+```bash
+bun run dev -- init /path/to/project \
+  --event-only \
+  --event-url https://stream.example.com/v1/events \
+  --event-auth-token-env HYPERVIGILANT_STREAM_TOKEN \
+  --project project-files \
+  --non-interactive
+```
+
+Store the token in the watched project's `.env`, the invocation directory's `.env`, or the process environment:
+
+```text
+HYPERVIGILANT_STREAM_TOKEN=...
+```
+
+The resulting destination is independent of agent configuration:
+
+```toml
+[destinations]
+agent = false
+
+[destinations.http]
+url = "https://stream.example.com/v1/events"
+auth_token_env = "HYPERVIGILANT_STREAM_TOKEN"
+request_timeout_ms = 10000
+```
+
+Omit `--event-only` and include `--agent-id` or `--create-agent` to require both HTTP and agent delivery.
+
+Before its first request, Hypervigilant writes the exact event body, event ID, body digest, sequence, and destination lease to `.hypervigilant/state.json`. The receiver must return a matching `dev.hypervigilant.event-receipt@1` body after durable append. A bare `2xx` response does not advance snapshots. Failed watch deliveries retry from the persisted outbox with the same identity and body.
+
+Non-loopback destinations require HTTPS and bearer-token indirection. Redirects, URL credentials, query strings, and fragments are rejected. The source token should bind the receiver-side source and privacy class; the sender cannot assert either in the payload.
+
+The exact request, retry, and receipt contract is in [`SPEC-0013`](specs/SPEC-0013-durable-http-event-destination.md). [`demo/http-event-receiver`](demo/http-event-receiver/) provides a strict synthetic receiver and an HTTP-only behavioral proof:
+
+```bash
+bun run demo:http-event
 ```
 
 ## Agent backends
@@ -145,6 +190,7 @@ Hypervigilant resolves the named variable from the same project-first `.env` cha
 ## What Hypervigilant does
 
 - Sends existing matching files once or watches for later changes.
+- Emits strict, authenticated, idempotent HTTP file events without requiring a Letta agent.
 - Resumes one project conversation, one conversation per file, or named specialist conversations.
 - Gives the default conversation guarded local file tools under `review`, `ask`, or `yolo` policy.
 - Lets attached Letta tools react to a change through their existing tool rules.
@@ -153,11 +199,12 @@ Hypervigilant resolves the named variable from the same project-first `.env` cha
 
 1. Hypervigilant records a baseline for files that match the configured globs.
 2. It batches additions, changes, and deletions. Repeated saves collapse to the latest content.
-3. It sends text diffs or binary metadata to the configured conversation routes.
-4. It advances each snapshot only after all required deliveries succeed.
-5. It suppresses agent file writes from the watcher and records their final state.
+3. It persists an outbox record when HTTP delivery is configured.
+4. It sends a strict HTTP event, an agent diff or metadata message, or both.
+5. It advances each snapshot only after every configured destination completes.
+6. It suppresses agent file writes from the watcher and records their final state.
 
-Hypervigilant detects changes made while it was stopped at the next startup. Agent turns run sequentially.
+Hypervigilant detects changes made while it was stopped at the next startup. HTTP events and agent turns run sequentially so source order remains explicit.
 
 `scan` uses the same file selection, routes, permissions, and state. It presents each current file as an `add` event. Before delivery, it prints file, byte, and estimated token totals. It blocks scans above the configured file or text-byte limits. After success, it removes stale matching snapshots without reporting deletion events.
 
@@ -292,13 +339,15 @@ hypervigilant prompts test src/auth/login.ts \
 
 ## Configuration
 
-Hypervigilant reads `hypervigilant.toml` from the watched project root. A configuration requires the following three fields:
+Hypervigilant reads `hypervigilant.toml` from the watched project root. Every configuration requires a version, a project name, and at least one destination. Agent delivery remains the default for backward compatibility:
 
 ```toml
 version = 1
 project = "my-project"
 agent_id = "agent-xxx"
 ```
+
+Set `destinations.agent = false` and configure `destinations.http` for event-only operation. An agent ID is not required in that mode.
 
 Add `model` to select a model for the project:
 
@@ -327,6 +376,7 @@ Legacy `hypervigilant.json` files load only when no TOML file exists.
 | `max_file_size_bytes` | `1048576` | Skip files above this size. |
 | `max_scan_files` | `100` | Block a scan with more selected files. |
 | `max_scan_text_bytes` | `65536` | Block a scan with more total text bytes. |
+| `[destinations]` | agent enabled | Enable agent delivery and optionally configure one HTTP event receiver. |
 | `[connection]` | `cloud` | Select Cloud, fully local, or user-managed App Server agent state. |
 | `mode` | `edit` | Select read-only or approval-gated local file tools. |
 | `routing` | `project` | Use one project conversation or one conversation per file. |
@@ -430,28 +480,37 @@ Hypervigilant stores private state under `.hypervigilant/` by default:
 - Full text, hash, and size for each delivered text file
 - Hash, size, and file kind for each delivered binary file
 - Project, per-file, and named conversation IDs
+- HTTP emitter identity, sequence, pending event body, destination lease, and receiver receipt
 - Permission overrides, worktree metadata, and process locks
 
 Keep the state directory private. Hypervigilant excludes its default state directory from Git.
 
-Cloud API keys and explicitly named remote bearer-token variables use this lookup order:
+Cloud API keys and explicitly named bearer-token variables use this lookup order:
 
 1. The watched project's `.env`
 2. The invocation directory's `.env`
 3. The ambient environment
 
-Cloud keys must start with `sk-let-`. Remote bearer tokens have no prefix requirement. Hypervigilant passes credentials to the selected transport but does not store their values in configuration or state.
+Cloud keys must start with `sk-let-`. App Server and HTTP event bearer tokens have no prefix requirement. Hypervigilant passes credentials only to the selected transport: an HTTP event token is not added to the agent/App Server runtime environment. It does not store token values in configuration or state.
 
 The following rules protect delivery and local files:
 
 - Failed deliveries do not advance affected snapshots.
-- Ambiguous post-send failures do not retry automatically.
+- Ambiguous agent post-send failures retain the existing conservative agent behavior.
+- HTTP failures retry only through the stable persisted idempotency identity and exact body.
+- HTTP receipt acceptance is persisted before optional agent delivery, so a later agent failure does not repeat the HTTP effect.
 - Agent file writes do not trigger feedback deliveries.
 - Binary event prompts and snapshots do not contain file bytes.
 - Worktree commits contain only delivered paths and approved mutation paths.
 - Process locks prevent overlapping worktree scans, watchers, merges, and cleanup.
 
 ## Demos
+
+[`http-event-receiver`](demo/http-event-receiver/) proves authenticated HTTP-only delivery, strict event validation, exact retry acceptance, divergent replay refusal, and receipt persistence without contacting a Letta agent.
+
+```bash
+bun run demo:http-event
+```
 
 [`cloud-local-device`](demo/cloud-local-device/) proves that a Cloud agent can execute on the current computer without a managed sandbox. The agent must read a random marker from an excluded local-only file; the script verifies the response and archives the temporary Cloud conversation.
 
@@ -502,6 +561,7 @@ hypervigilant status /path/to/project
 - With project routing, a scan sends all matching files to the default conversation in one turn.
 - Prompt rules and tool configuration load when each scan or watcher starts.
 - Agent turns and named specialist turns run sequentially.
+- One configuration can target one HTTP receiver. Use separate state directories for independent receivers.
 - One watcher and one isolated worktree can own a state directory.
 - The JSON state store rewrites stored text snapshots as one file. Storage cost grows with total watched text.
 

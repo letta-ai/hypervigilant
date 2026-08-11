@@ -13,6 +13,16 @@ routing = "project"
 state_dir = ".hypervigilant"
 instructions = "Review each change in project context. Report concrete issues and make only necessary edits."
 
+[destinations]
+agent = true
+
+# Add this section to require a durable HTTP receiver as another destination.
+# Set agent = false above for HTTP-only operation; agent_id is then optional.
+# [destinations.http]
+# url = "https://stream.example.com/v1/events"
+# auth_token_env = "HYPERVIGILANT_STREAM_TOKEN"
+# request_timeout_ms = 10000
+
 # Agent state backend. Use "local" for a fully local command-scoped App Server.
 # Use "remote" with url/auth_token_env for a user-managed App Server.
 [connection]

@@ -84,6 +84,7 @@ describe("integration", () => {
       worktree: { enabled: false, autoCommit: true, branchPrefix: "hypervigilant" },
       ...overrides,
       connection: overrides.connection ?? { backend: "cloud" },
+      destinations: overrides.destinations ?? { agent: true },
       promptRules: overrides.promptRules ?? [],
       tools: overrides.tools ?? { autoAllow: [], ask: [] },
     };

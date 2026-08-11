@@ -34,15 +34,25 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
   };
 
   log(`Project: ${config.project}`);
-  log(`Agent: ${config.agentId}`);
-  log(
-    `Connection: ${
-      config.connection.backend === "remote"
-        ? `remote (${config.connection.url})`
-        : config.connection.backend
-    }`,
-  );
-  log(`Managed filesystem: ${connectionFilesystemAccess(config.connection)}`);
+  log(`Agent: ${config.destinations.agent ? config.agentId : "disabled"}`);
+  if (config.destinations.agent) {
+    log(
+      `Connection: ${
+        config.connection.backend === "remote"
+          ? `remote (${config.connection.url})`
+          : config.connection.backend
+      }`,
+    );
+    log(`Managed filesystem: ${connectionFilesystemAccess(config.connection)}`);
+  }
+  if (config.destinations.http) {
+    log(`HTTP destination: ${config.destinations.http.url}`);
+    log(
+      `HTTP authentication: ${config.destinations.http.authTokenEnv ? `bearer token from ${config.destinations.http.authTokenEnv}` : "none (loopback only)"}`,
+    );
+  } else {
+    log("HTTP destination: disabled");
+  }
 
   const worktree = config.worktree.enabled
     ? await findExistingIsolatedWorktree(projectRoot, config)
@@ -54,10 +64,16 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
       : resolve(projectRoot, config.stateDir),
   });
   const state = await stateStore.load();
-  const configuredConnectionKey = connectionKey(config.connection);
-  const agentMismatch = state !== null && state.agentId !== config.agentId;
+  const configuredConnectionKey = config.destinations.agent
+    ? connectionKey(config.connection)
+    : "agent-disabled";
+  const configuredAgentId = config.destinations.agent ? config.agentId : undefined;
+  const agentMismatch =
+    config.destinations.agent && state !== null && state.agentId !== configuredAgentId;
   const connectionMismatch =
-    state !== null && (state.connectionKey ?? "cloud") !== configuredConnectionKey;
+    config.destinations.agent &&
+    state !== null &&
+    (state.connectionKey ?? "cloud") !== configuredConnectionKey;
   const routeMismatch = agentMismatch || connectionMismatch;
 
   const matcher = createGlobMatcher(config);
@@ -118,6 +134,33 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
   log("");
   log(`Persisted snapshots: ${state ? Object.keys(state.snapshots).length : 0}`);
 
+  if (state?.eventOutput) {
+    log("");
+    log("Event outbox:");
+    log(`  Emitter: ${state.eventOutput.emitterId}`);
+    log(`  Next sequence: ${state.eventOutput.nextSequence}`);
+    const pending = state.eventOutput.pending;
+    if (pending) {
+      log(`  Pending: ${pending.eventId} (sequence ${pending.sequence})`);
+      log(
+        `  HTTP: ${pending.httpReceipt ? "accepted" : pending.httpDestination ? "awaiting receipt" : "not configured"}`,
+      );
+      if (pending.agentDestination) {
+        log(
+          `  Agent: ${pending.agentDelivered ? "delivered" : `${pending.agentDeliveredPaths.length} path(s) delivered`}`,
+        );
+      }
+    } else {
+      log("  Pending: none");
+    }
+    if (state.eventOutput.lastReceipt) {
+      const receipt = state.eventOutput.lastReceipt;
+      log(
+        `  Last receipt: ${receipt.sourceId} sequence ${receipt.sourceSequence} for ${receipt.eventId}`,
+      );
+    }
+  }
+
   if (agentMismatch && state) {
     log(`  State belongs to agent ${state.agentId}; ignoring saved conversation routes.`);
   }
@@ -153,12 +196,18 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
 
   log("");
   log("Routing:");
-  log(`  Default: ${config.routing}`);
+  if (!config.destinations.agent) {
+    log("  Agent delivery disabled.");
+  } else {
+    log(`  Default: ${config.routing}`);
+  }
   const currentFiles = entries
     .filter((e) => e.state !== "stale")
     .sort((a, b) => a.relPath.localeCompare(b.relPath));
   const currentLabel = `${currentFiles.length} current ${currentFiles.length === 1 ? "file" : "files"}`;
-  if (routeMismatch) {
+  if (!config.destinations.agent) {
+    // HTTP event delivery has no Letta conversation route.
+  } else if (routeMismatch) {
     log("  Conversation routes ignored (agent or connection mismatch).");
   } else if (config.routing === "project") {
     const convId = state?.projectConversation?.conversationId ?? null;
@@ -175,7 +224,7 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
 
   const namedRules = config.promptRules.flatMap((r) => (r.conversation ? [r.conversation] : []));
   const uniqueNames = [...new Set(namedRules)];
-  if (uniqueNames.length > 0) {
+  if (config.destinations.agent && uniqueNames.length > 0) {
     log("");
     log("Named prompt-rule routes:");
     const namedConvs = (!routeMismatch ? state?.namedConversations : undefined) ?? {};

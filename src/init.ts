@@ -3,6 +3,7 @@ import { basename, join, resolve } from "node:path";
 import {
   CONFIG_FILENAME,
   configSchema,
+  type HttpEventDestinationInput,
   type HypervigilantConfig,
   type LettaConnectionConfig,
   resolveConfigPath,
@@ -21,6 +22,10 @@ export interface InitOptions {
   connection?: LettaConnectionConfig;
   /** Create a new agent instead of using an existing one. */
   createAgent?: boolean;
+  /** Deliver saved batches to this generic HTTP receiver. */
+  httpDestination?: HttpEventDestinationInput;
+  /** Disable Letta agent delivery. Requires an HTTP destination. */
+  eventOnly?: boolean;
   /** Project name. */
   project?: string;
   /** Include globs. */
@@ -44,7 +49,7 @@ export interface InitOptions {
 export interface InitResult {
   configPath: string;
   config: HypervigilantConfig;
-  agentId: string;
+  agentId?: string;
 }
 
 export interface InitDependencies {
@@ -103,6 +108,12 @@ export async function initCommand(
   if (opts.agentId && opts.createAgent) {
     throw new Error("Use either --agent-id or --create-agent, not both.");
   }
+  if (opts.eventOnly && (opts.agentId || opts.createAgent)) {
+    throw new Error("--event-only cannot be combined with --agent-id or --create-agent.");
+  }
+  if (opts.eventOnly && !opts.httpDestination) {
+    throw new Error("--event-only requires an HTTP event destination.");
+  }
 
   // Check for either the primary TOML config or a legacy JSON config.
   const configPath = join(projectRoot, CONFIG_FILENAME);
@@ -134,7 +145,7 @@ export async function initCommand(
 
   if (!opts.nonInteractive) {
     // Interactive prompts
-    if (!agentId && !createAgent) {
+    if (!opts.eventOnly && !agentId && !createAgent) {
       const useExisting = await promptYesNo("Do you have an existing agent ID?", true, ask);
       if (useExisting) {
         agentId = await ask("Enter agent ID (agent-xxx): ");
@@ -155,7 +166,7 @@ export async function initCommand(
     }
 
     if (!mode) {
-      if (remoteDiffOnly) {
+      if (opts.eventOnly || remoteDiffOnly) {
         mode = "review";
       } else {
         const isEdit = await promptYesNo(
@@ -168,23 +179,28 @@ export async function initCommand(
     }
 
     if (worktreeEnabled === undefined) {
-      worktreeEnabled = remoteDiffOnly
-        ? false
-        : await promptYesNo(
-            "Use an isolated Git worktree for watched changes and agent repairs?",
-            false,
-            ask,
-          );
+      worktreeEnabled =
+        opts.eventOnly || remoteDiffOnly
+          ? false
+          : await promptYesNo(
+              "Use an isolated Git worktree for watched changes and agent repairs?",
+              false,
+              ask,
+            );
     }
 
     if (!routing) {
-      const isPerFile = await promptYesNo("Use per-file conversations?", false, ask);
-      routing = isPerFile ? "per-file" : "project";
+      if (opts.eventOnly) {
+        routing = "project";
+      } else {
+        const isPerFile = await promptYesNo("Use per-file conversations?", false, ask);
+        routing = isPerFile ? "per-file" : "project";
+      }
     }
   }
 
   // Validate required fields
-  if (!agentId && !createAgent) {
+  if (!opts.eventOnly && !agentId && !createAgent) {
     throw new Error(
       "An agent ID is required. Provide --agent-id or --create-agent, or run interactively.",
     );
@@ -212,7 +228,7 @@ export async function initCommand(
     });
   }
 
-  if (!agentId) {
+  if (!opts.eventOnly && !agentId) {
     throw new Error("Failed to obtain an agent ID.");
   }
 
@@ -220,8 +236,12 @@ export async function initCommand(
   const configData: Record<string, unknown> = {
     version: 1,
     project: projectName || "my-project",
-    agentId,
+    ...(agentId ? { agentId } : {}),
     connection: opts.connection ?? { backend: "cloud" },
+    destinations: {
+      agent: !opts.eventOnly,
+      ...(opts.httpDestination ? { http: opts.httpDestination } : {}),
+    },
     include: include ?? ["**/*.md", "**/*.txt"],
     exclude: exclude ?? [
       "**/node_modules/**",
@@ -238,13 +258,14 @@ export async function initCommand(
     },
     mode:
       mode ??
-      (opts.connection?.backend === "remote" && !opts.connection.sharedFilesystem
+      (opts.eventOnly ||
+      (opts.connection?.backend === "remote" && !opts.connection.sharedFilesystem)
         ? "review"
         : "edit"),
     routing: routing ?? "project",
     stateDir: stateDir ?? ".hypervigilant",
     worktree: {
-      enabled: worktreeEnabled ?? false,
+      enabled: opts.eventOnly ? false : (worktreeEnabled ?? false),
       autoCommit: true,
       branchPrefix: "hypervigilant",
     },
@@ -268,5 +289,5 @@ export async function initCommand(
   // Write the human-owned TOML config atomically.
   await atomicWriteFile(configPath, serializeConfigToml(config));
 
-  return { configPath, config, agentId };
+  return { configPath, config, agentId: agentId || undefined };
 }

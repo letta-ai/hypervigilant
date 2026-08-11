@@ -4,8 +4,45 @@
   "description": "Schema for the keys parsed from hypervigilant.toml.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version", "project", "agent_id"],
+  "required": ["version", "project"],
   "allOf": [
+    {
+      "if": {
+        "anyOf": [
+          { "not": { "required": ["destinations"] } },
+          {
+            "properties": {
+              "destinations": { "not": { "required": ["agent"] } }
+            }
+          },
+          {
+            "properties": {
+              "destinations": {
+                "required": ["agent"],
+                "properties": { "agent": { "const": true } }
+              }
+            }
+          }
+        ]
+      },
+      "then": { "required": ["agent_id"] }
+    },
+    {
+      "if": {
+        "required": ["destinations"],
+        "properties": {
+          "destinations": {
+            "required": ["agent"],
+            "properties": { "agent": { "const": false } }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "worktree": { "properties": { "enabled": { "const": false } } }
+        }
+      }
+    },
     {
       "if": {
         "required": ["connection"],
@@ -117,6 +154,66 @@
           }
         }
       ]
+    },
+    "destinations": {
+      "type": "object",
+      "additionalProperties": false,
+      "default": { "agent": true },
+      "anyOf": [
+        {
+          "required": ["agent"],
+          "properties": { "agent": { "const": true } }
+        },
+        { "required": ["http"] }
+      ],
+      "properties": {
+        "agent": {
+          "type": "boolean",
+          "default": true,
+          "description": "Deliver saved batches to the configured Letta agent."
+        },
+        "http": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["url"],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "url": {
+                    "not": {
+                      "pattern": "^[Hh][Tt][Tt][Pp][Ss]?://(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?:[:/]|$)"
+                    }
+                  }
+                }
+              },
+              "then": {
+                "required": ["auth_token_env"],
+                "properties": { "url": { "pattern": "^[Hh][Tt][Tt][Pp][Ss]://" } }
+              }
+            }
+          ],
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https?://[^/?#@]+(?:/[^?#@]*)?$",
+              "description": "Generic event receiver URL without credentials, query parameters, or fragments."
+            },
+            "auth_token_env": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "not": { "const": "LETTA_API_KEY" },
+              "description": "Environment variable containing the receiver bearer token. Required off loopback."
+            },
+            "request_timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 10000
+            }
+          }
+        }
+      }
     },
     "model": {
       "type": "string",

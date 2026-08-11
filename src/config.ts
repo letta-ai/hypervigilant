@@ -42,6 +42,17 @@ const appServerUrlSchema = z
     }
   }, "Use an http, https, ws, or wss App Server URL.");
 
+const httpEventUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => {
+    try {
+      return ["http:", "https:"].includes(new URL(value).protocol);
+    } catch {
+      return false;
+    }
+  }, "Use an http or https event destination URL.");
+
 function isLoopbackAppServerUrl(value: string): boolean {
   try {
     const hostname = new URL(value).hostname.toLowerCase();
@@ -52,6 +63,68 @@ function isLoopbackAppServerUrl(value: string): boolean {
     return false;
   }
 }
+
+export const httpEventDestinationSchema = z
+  .object({
+    url: httpEventUrlSchema,
+    authTokenEnv: environmentVariableSchema
+      .refine((value) => value !== "LETTA_API_KEY", {
+        message: "Use a dedicated event token variable instead of LETTA_API_KEY.",
+      })
+      .optional(),
+    requestTimeoutMs: positiveIntegerSchema.default(10_000),
+  })
+  .strict()
+  .superRefine((destination, context) => {
+    let url: URL | null = null;
+    try {
+      url = new URL(destination.url);
+      if (url.username || url.password || url.search || url.hash) {
+        context.addIssue({
+          code: "custom",
+          path: ["url"],
+          message:
+            "HTTP event destination URLs cannot contain credentials, query parameters, or fragments.",
+        });
+      }
+    } catch {
+      // The field schema reports invalid URLs.
+    }
+    if (!isLoopbackAppServerUrl(destination.url)) {
+      if (!destination.authTokenEnv) {
+        context.addIssue({
+          code: "custom",
+          path: ["authTokenEnv"],
+          message: "Non-loopback HTTP event destinations require auth_token_env.",
+        });
+      }
+      if (url && url.protocol !== "https:") {
+        context.addIssue({
+          code: "custom",
+          path: ["url"],
+          message: "Non-loopback HTTP event destinations require an https URL.",
+        });
+      }
+    }
+  });
+
+export type HttpEventDestinationConfig = z.infer<typeof httpEventDestinationSchema>;
+export type HttpEventDestinationInput = z.input<typeof httpEventDestinationSchema>;
+
+const destinationsConfigSchema = z
+  .object({
+    agent: z.boolean().default(true),
+    http: httpEventDestinationSchema.optional(),
+  })
+  .strict()
+  .superRefine((destinations, context) => {
+    if (!destinations.agent && !destinations.http) {
+      context.addIssue({
+        code: "custom",
+        message: "Enable agent delivery, configure an HTTP destination, or both.",
+      });
+    }
+  });
 
 export const connectionConfigSchema = z.discriminatedUnion("backend", [
   z.object({ backend: z.literal("cloud") }).strict(),
@@ -225,13 +298,15 @@ export const configSchema = z
       .min(1)
       .refine((value) => value !== "agent-REPLACE-ME", {
         message: "Replace agent-REPLACE-ME with a real Letta agent ID.",
-      }),
+      })
+      .optional(),
     model: z
       .string()
       .min(1)
       .refine((value) => value.trim().length > 0, "Model cannot be blank.")
       .optional(),
     connection: connectionConfigSchema.default({ backend: "cloud" }),
+    destinations: destinationsConfigSchema.default(() => ({ agent: true })),
     include: z.array(z.string().min(1)).default(["**/*.md", "**/*.txt"]),
     exclude: z
       .array(z.string().min(1))
@@ -259,7 +334,53 @@ export const configSchema = z
   })
   .strict()
   .superRefine((config, context) => {
-    if (config.connection.backend === "remote" && !config.connection.sharedFilesystem) {
+    if (config.destinations.agent && !config.agentId) {
+      context.addIssue({
+        code: "custom",
+        path: ["agentId"],
+        message: "Agent delivery requires agent_id.",
+      });
+    }
+    if (!config.destinations.agent && config.worktree.enabled) {
+      context.addIssue({
+        code: "custom",
+        path: ["worktree", "enabled"],
+        message: "HTTP-only delivery cannot use an agent edit worktree.",
+      });
+    }
+    if (!config.destinations.agent) {
+      const inertAgentSettings: Array<[boolean, (string | number)[], string]> = [
+        [config.model !== undefined, ["model"], "HTTP-only delivery cannot select an agent model."],
+        [
+          config.instructions.length > 0,
+          ["instructions"],
+          "HTTP-only delivery cannot configure agent instructions.",
+        ],
+        [
+          config.promptRules.length > 0,
+          ["promptRules"],
+          "HTTP-only delivery cannot configure agent prompt rules.",
+        ],
+        [
+          config.tools.autoAllow.length + config.tools.ask.length > 0,
+          ["tools"],
+          "HTTP-only delivery cannot configure agent tools.",
+        ],
+        [
+          config.connection.backend !== "cloud",
+          ["connection"],
+          "HTTP-only delivery cannot configure an inert agent connection.",
+        ],
+      ];
+      for (const [invalid, path, message] of inertAgentSettings) {
+        if (invalid) context.addIssue({ code: "custom", path, message });
+      }
+    }
+    if (
+      config.destinations.agent &&
+      config.connection.backend === "remote" &&
+      !config.connection.sharedFilesystem
+    ) {
       if (config.mode !== "review") {
         context.addIssue({
           code: "custom",
@@ -308,6 +429,7 @@ const TOML_TOP_LEVEL_KEYS: Record<string, keyof HypervigilantConfig> = {
   agent_id: "agentId",
   model: "model",
   connection: "connection",
+  destinations: "destinations",
   include: "include",
   exclude: "exclude",
   max_file_size_bytes: "maxFileSizeBytes",
@@ -338,6 +460,20 @@ const TOML_CONNECTION_KEYS: Record<string, ConnectionConfigKey> = {
   request_timeout_ms: "requestTimeoutMs",
   startup_timeout_ms: "startupTimeoutMs",
   shared_filesystem: "sharedFilesystem",
+};
+
+const TOML_DESTINATIONS_KEYS = {
+  agent: "agent",
+  http: "http",
+} as const;
+
+const TOML_HTTP_DESTINATION_KEYS: Record<
+  string,
+  keyof NonNullable<HypervigilantConfig["destinations"]["http"]>
+> = {
+  url: "url",
+  auth_token_env: "authTokenEnv",
+  request_timeout_ms: "requestTimeoutMs",
 };
 
 const TOML_BATCHING_KEYS: Record<string, keyof HypervigilantConfig["batching"]> = {
@@ -398,6 +534,33 @@ function normalizeTomlConfig(raw: unknown): unknown {
         connection[connectionTarget] = connectionValue;
       }
       normalized.connection = connection;
+      continue;
+    }
+    if (key === "destinations" && isRecord(value)) {
+      const destinations: Record<string, unknown> = {};
+      for (const [destinationKey, destinationValue] of Object.entries(value)) {
+        const destinationTarget =
+          TOML_DESTINATIONS_KEYS[destinationKey as keyof typeof TOML_DESTINATIONS_KEYS];
+        if (!destinationTarget) {
+          throw new Error(`Unknown TOML key ${JSON.stringify(`destinations.${destinationKey}`)}.`);
+        }
+        if (destinationKey === "http" && isRecord(destinationValue)) {
+          const http: Record<string, unknown> = {};
+          for (const [httpKey, httpValue] of Object.entries(destinationValue)) {
+            const httpTarget = TOML_HTTP_DESTINATION_KEYS[httpKey];
+            if (!httpTarget) {
+              throw new Error(
+                `Unknown TOML key ${JSON.stringify(`destinations.http.${httpKey}`)}.`,
+              );
+            }
+            http[httpTarget] = httpValue;
+          }
+          destinations.http = http;
+          continue;
+        }
+        destinations[destinationTarget] = destinationValue;
+      }
+      normalized.destinations = destinations;
       continue;
     }
     if (key === "tools" && isRecord(value)) {
@@ -520,22 +683,33 @@ export function serializeConfigToml(config: HypervigilantConfig): string {
     "# Hypervigilant project configuration.",
     "version = 1",
     `project = ${tomlString(config.project)}`,
-    `agent_id = ${tomlString(config.agentId)}`,
   ];
-  if (config.model) lines.push(`model = ${tomlString(config.model)}`);
+  if (config.agentId) lines.push(`agent_id = ${tomlString(config.agentId)}`);
+  if (config.destinations.agent && config.model) lines.push(`model = ${tomlString(config.model)}`);
   lines.push(
     `include = ${tomlStringArray(config.include)}`,
     `exclude = ${tomlStringArray(config.exclude)}`,
     `max_file_size_bytes = ${config.maxFileSizeBytes}`,
     `max_scan_files = ${config.maxScanFiles}`,
     `max_scan_text_bytes = ${config.maxScanTextBytes}`,
-    `mode = ${tomlString(config.mode)}`,
-    `routing = ${tomlString(config.routing)}`,
     `state_dir = ${tomlString(config.stateDir)}`,
   );
-  if (config.instructions) lines.push(`instructions = ${tomlString(config.instructions)}`);
-  lines.push("", "[connection]", `backend = ${tomlString(config.connection.backend)}`);
-  if (config.connection.backend === "local") {
+  if (config.destinations.agent) {
+    lines.push(`mode = ${tomlString(config.mode)}`, `routing = ${tomlString(config.routing)}`);
+    if (config.instructions) lines.push(`instructions = ${tomlString(config.instructions)}`);
+  }
+  lines.push("", "[destinations]", `agent = ${config.destinations.agent}`);
+  if (config.destinations.http) {
+    lines.push("", "[destinations.http]", `url = ${tomlString(config.destinations.http.url)}`);
+    if (config.destinations.http.authTokenEnv) {
+      lines.push(`auth_token_env = ${tomlString(config.destinations.http.authTokenEnv)}`);
+    }
+    lines.push(`request_timeout_ms = ${config.destinations.http.requestTimeoutMs}`);
+  }
+  if (config.destinations.agent) {
+    lines.push("", "[connection]", `backend = ${tomlString(config.connection.backend)}`);
+  }
+  if (config.destinations.agent && config.connection.backend === "local") {
     if (config.connection.requestTimeoutMs !== undefined) {
       lines.push(`request_timeout_ms = ${config.connection.requestTimeoutMs}`);
     }
@@ -543,7 +717,7 @@ export function serializeConfigToml(config: HypervigilantConfig): string {
       lines.push(`startup_timeout_ms = ${config.connection.startupTimeoutMs}`);
     }
   }
-  if (config.connection.backend === "remote") {
+  if (config.destinations.agent && config.connection.backend === "remote") {
     lines.push(`url = ${tomlString(config.connection.url)}`);
     if (config.connection.authTokenEnv !== undefined) {
       lines.push(`auth_token_env = ${tomlString(config.connection.authTokenEnv)}`);
@@ -560,18 +734,22 @@ export function serializeConfigToml(config: HypervigilantConfig): string {
     `delay_ms = ${config.batching.delayMs}`,
     `max_wait_ms = ${config.batching.maxWaitMs}`,
     `window_ms = ${config.batching.windowMs}`,
-    "",
-    "[tools]",
-    `auto_allow = ${tomlStringArray(config.tools.autoAllow)}`,
-    `ask = ${tomlStringArray(config.tools.ask)}`,
-    "",
-    "[worktree]",
-    `enabled = ${config.worktree.enabled}`,
-    `auto_commit = ${config.worktree.autoCommit}`,
-    `branch_prefix = ${tomlString(config.worktree.branchPrefix)}`,
-    "",
   );
-  for (const rule of config.promptRules) {
+  if (config.destinations.agent) {
+    lines.push(
+      "",
+      "[tools]",
+      `auto_allow = ${tomlStringArray(config.tools.autoAllow)}`,
+      `ask = ${tomlStringArray(config.tools.ask)}`,
+      "",
+      "[worktree]",
+      `enabled = ${config.worktree.enabled}`,
+      `auto_commit = ${config.worktree.autoCommit}`,
+      `branch_prefix = ${tomlString(config.worktree.branchPrefix)}`,
+    );
+  }
+  lines.push("");
+  for (const rule of config.destinations.agent ? config.promptRules : []) {
     lines.push(
       "[[prompt_rules]]",
       `name = ${tomlString(rule.name)}`,

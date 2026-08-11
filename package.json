@@ -1,7 +1,7 @@
 {
   "name": "hypervigilant",
   "version": "0.1.0",
-  "description": "Trigger persistent Letta agents from file changes.",
+  "description": "Deliver durable local file-change events to persistent agents and HTTP receivers.",
   "type": "module",
   "bin": {
     "hypervigilant": "./dist/cli.js"
@@ -13,8 +13,12 @@
     ".env.example",
     "hypervigilant.example.toml",
     "hypervigilant.schema.json",
+    "specs/SPEC-0013-durable-http-event-destination.md",
     "demo/cloud-local-device/README.md",
     "demo/cloud-local-device/run.ts",
+    "demo/http-event-receiver/README.md",
+    "demo/http-event-receiver/receiver.ts",
+    "demo/http-event-receiver/run.ts",
     "demo/model-routing/README.md",
     "demo/model-routing/run.ts",
     "demo/spec-guardian/README.md",
@@ -41,8 +45,9 @@
     "lint": "biome check src tests scripts demo",
     "format": "biome format --write src tests scripts demo",
     "test": "bun test tests/*.test.ts",
-    "test:demo": "bun test demo/cloud-local-device/run.test.ts demo/spec-guardian/tests/greeting.test.ts demo/the-doc/tests/activity.test.ts demo/the-doc/tests/server.test.ts",
+    "test:demo": "bun test demo/cloud-local-device/run.test.ts demo/http-event-receiver/run.test.ts demo/spec-guardian/tests/greeting.test.ts demo/the-doc/tests/activity.test.ts demo/the-doc/tests/server.test.ts",
     "demo:cloud-local-device": "bun run demo/cloud-local-device/run.ts",
+    "demo:http-event": "bun run demo/http-event-receiver/run.ts",
     "demo:the-doc": "bun run demo/the-doc/scripts/run.ts",
     "demo:the-doc:setup": "bun run demo/the-doc/scripts/setup.ts",
     "demo:the-doc:editor": "bun run demo/the-doc/server.ts",
