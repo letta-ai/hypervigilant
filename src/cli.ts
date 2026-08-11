@@ -2,15 +2,22 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import type { CanUseToolContext, CanUseToolResponse } from "@letta-ai/letta-agent-sdk";
-import { LettaAgentClient } from "@letta-ai/letta-agent-sdk";
 import { renderDiffPreviews } from "./approval-diff.ts";
-import { resolveCloudApiKey } from "./auth.ts";
 import {
+  connectionConfigSchema,
+  LETTA_BACKENDS,
+  type LettaBackend,
+  type LettaConnectionConfig,
   loadConfig,
   PROMPT_RULE_EVENTS,
   type PromptRuleEvent,
   resolveConfigPath,
 } from "./config.ts";
+import {
+  createConnectionClients,
+  resolveConnectionPlan,
+  validateConnectionAgent,
+} from "./connection.ts";
 import { initCommand } from "./init.ts";
 import {
   getPermissionStatus,
@@ -107,6 +114,10 @@ async function runInit(args: string[]): Promise<void> {
     options: {
       "agent-id": { type: "string" },
       "create-agent": { type: "boolean" },
+      backend: { type: "string" },
+      "server-url": { type: "string" },
+      "auth-token-env": { type: "string" },
+      "shared-filesystem": { type: "boolean" },
       project: { type: "string" },
       include: { type: "string", multiple: true },
       exclude: { type: "string", multiple: true },
@@ -137,16 +148,54 @@ async function runInit(args: string[]): Promise<void> {
     );
   }
 
+  const backend = (values.backend ?? "cloud") as LettaBackend;
+  if (!LETTA_BACKENDS.includes(backend)) {
+    throw new Error(`Invalid backend: ${values.backend}. Use "cloud", "local", or "remote".`);
+  }
+  if (backend !== "remote" && values["server-url"]) {
+    throw new Error("--server-url is only valid with --backend remote.");
+  }
+  if (backend !== "remote" && values["auth-token-env"]) {
+    throw new Error("--auth-token-env is only valid with --backend remote.");
+  }
+  if (backend !== "remote" && values["shared-filesystem"]) {
+    throw new Error("--shared-filesystem is only valid with --backend remote.");
+  }
+  const connectionInput: Record<string, unknown> = { backend };
+  if (backend === "remote") {
+    if (!values["server-url"]) {
+      throw new Error("--backend remote requires --server-url.");
+    }
+    connectionInput.url = values["server-url"];
+    if (values["auth-token-env"]) connectionInput.authTokenEnv = values["auth-token-env"];
+    connectionInput.sharedFilesystem = values["shared-filesystem"] ?? false;
+  }
+  const connectionResult = connectionConfigSchema.safeParse(connectionInput);
+  if (!connectionResult.success) {
+    throw new Error(
+      `Invalid connection: ${connectionResult.error.issues.map((issue) => issue.message).join("; ")}`,
+    );
+  }
+  const connection: LettaConnectionConfig = connectionResult.data;
+
   // Create the SDK client only if setup actually creates an agent.
   const agentCreator = {
-    createAgent: (options: Record<string, unknown>) =>
-      createManagementClient(projectRoot).createAgent(options),
+    async createAgent(options: Record<string, unknown>) {
+      const plan = resolveConnectionPlan(connection, [projectRoot, process.cwd()]);
+      const clients = await createConnectionClients(plan);
+      try {
+        return await clients.createAgent(options);
+      } finally {
+        await clients.close();
+      }
+    },
   };
 
   const result = await initCommand(
     {
       path,
       agentId: values["agent-id"],
+      connection,
       createAgent: values["create-agent"],
       project: values.project,
       include: values.include,
@@ -163,6 +212,7 @@ async function runInit(args: string[]): Promise<void> {
 
   log(`Configuration written to ${result.configPath}`);
   log(`Agent ID: ${result.agentId}`);
+  log(`Connection: ${result.config.connection.backend}`);
   log(`Project: ${result.config.project}`);
   log(`Mode: ${result.config.mode}`);
   log(`Routing: ${result.config.routing}`);
@@ -197,15 +247,17 @@ async function runDeliveryCommand(args: string[], command: "watch" | "scan"): Pr
 
   const path = positionals[0];
   const projectRoot = resolve(path ?? process.cwd());
-  const runtimeEnv = requireRuntimeEnv(projectRoot);
-  const managementClient = createManagementClient(projectRoot);
-  const client = createRuntimeClient(projectRoot);
+  const configPath = resolveConfigPath(projectRoot, values.config).path;
+  const config = await loadConfig(configPath);
+  const plan = resolveConnectionPlan(config.connection, [projectRoot, process.cwd()]);
+  const clients = await createConnectionClients(plan);
   const options = {
     path,
-    configPath: values.config,
-    runtimeEnv,
+    configPath,
+    runtimeEnv: plan.runtimeEnv,
+    connectionLabel: plan.description,
     validateAgent: async (agentId: string) => {
-      await managementClient.agents.retrieve(agentId);
+      await validateConnectionAgent(clients, agentId);
     },
     onAssistantText: (text: string) => {
       process.stdout.write(text);
@@ -216,7 +268,13 @@ async function runDeliveryCommand(args: string[], command: "watch" | "scan"): Pr
     onError: logError,
   };
 
-  await (command === "scan" ? scanCommand(options, client) : watchCommand(options, client));
+  try {
+    await (command === "scan"
+      ? scanCommand(options, clients.runtime)
+      : watchCommand(options, clients.runtime));
+  } finally {
+    await clients.close();
+  }
 }
 
 /* ─────────────────────────── Worktree ───────────────────────────── */
@@ -416,35 +474,6 @@ async function runStatus(args: string[]): Promise<void> {
   for (const line of result.lines) console.log(line);
 }
 
-/* ──────────────────────────── Client ────────────────────────────── */
-
-/**
- * Read the API key for Cloud-backed local execution.
- * The Agent SDK defaults to the Letta Cloud API URL.
- */
-function requireRuntimeEnv(projectRoot: string): Record<string, string> {
-  return { LETTA_API_KEY: resolveCloudApiKey([projectRoot, process.cwd()]) };
-}
-
-function createManagementClient(projectRoot: string): LettaAgentClient {
-  const env = requireRuntimeEnv(projectRoot);
-  return new LettaAgentClient({
-    backend: "cloud",
-    apiKey: env.LETTA_API_KEY,
-  });
-}
-
-function createRuntimeClient(projectRoot: string): LettaAgentClient {
-  // Desktop can inject its internal local-server URL. Remove it so the spawned
-  // App Server uses the Agent SDK's default Letta Cloud URL with the project key.
-  delete process.env.LETTA_BASE_URL;
-  requireRuntimeEnv(projectRoot);
-  return new LettaAgentClient({
-    backend: "local",
-    appServer: { harnessBackend: "api", pinGlobalAgent: false },
-  });
-}
-
 /* ──────────────────────────── Main ───────────────────────────────── */
 
 async function main(): Promise<void> {
@@ -523,6 +552,10 @@ Commands:
 Init options:
   --agent-id <id>         Use an existing agent ID.
   --create-agent          Create a new agent instead of using an existing one.
+  --backend <backend>     Agent state: "cloud", "local", or "remote". Default: cloud.
+  --server-url <url>      User-managed App Server URL for the remote backend.
+  --auth-token-env <name> Environment variable containing the App Server bearer token.
+  --shared-filesystem     Remote App Server sees this project at the same absolute path.
   --project <name>        Project name.
   --include <glob>        Include glob. Repeat this option for more globs.
   --exclude <glob>        Exclude glob. Repeat this option for more globs.
@@ -559,11 +592,15 @@ Prompt commands:
   Named conversations      Optional persistent filesystem-read-only routes.
 
 Environment:
-  LETTA_API_KEY            Required for agent setup, scan, and watch. Status does not use it.
+  LETTA_API_KEY            Required only for the cloud backend.
+  LETTA_APP_SERVER_TOKEN   Suggested bearer-token variable for an authenticated remote server.
+  Local backend            Uses provider connections already configured in Letta Code.
 
 Examples:
   hypervigilant init /path/to/project --agent-id agent-xxx --non-interactive
   hypervigilant init /path/to/project --create-agent --mode edit
+  hypervigilant init /path/to/project --backend local --create-agent
+  hypervigilant init /path/to/project --backend remote --server-url ws://127.0.0.1:4500 --agent-id agent-local-xxx
   hypervigilant scan /path/to/project
   hypervigilant status /path/to/project
   hypervigilant watch /path/to/project

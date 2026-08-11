@@ -5,6 +5,7 @@
       "name": "hypervigilant",
       "dependencies": {
         "@letta-ai/letta-agent-sdk": "0.6.0",
+        "@letta-ai/letta-code": "0.30.0",
         "chokidar": "^4.0.3",
         "diff": "^8.0.2",
         "picomatch": "^4.0.3",

@@ -5,6 +5,32 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["version", "project", "agent_id"],
+  "allOf": [
+    {
+      "if": {
+        "required": ["connection"],
+        "properties": {
+          "connection": {
+            "required": ["backend"],
+            "properties": { "backend": { "const": "remote" } },
+            "not": {
+              "required": ["shared_filesystem"],
+              "properties": { "shared_filesystem": { "const": true } }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": ["mode"],
+        "properties": {
+          "mode": { "const": "review" },
+          "worktree": {
+            "properties": { "enabled": { "const": false } }
+          }
+        }
+      }
+    }
+  ],
   "properties": {
     "version": {
       "type": "integer",
@@ -19,7 +45,78 @@
     "agent_id": {
       "type": "string",
       "minLength": 1,
-      "description": "Letta agent ID (agent-xxx)."
+      "description": "Letta agent ID from the configured backend."
+    },
+    "connection": {
+      "description": "Where the Letta agent state and harness are hosted.",
+      "default": { "backend": "cloud" },
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["backend"],
+          "properties": {
+            "backend": { "const": "cloud" }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["backend"],
+          "properties": {
+            "backend": { "const": "local" },
+            "request_timeout_ms": { "type": "integer", "minimum": 1 },
+            "startup_timeout_ms": { "type": "integer", "minimum": 1 }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["backend", "url"],
+          "allOf": [
+            {
+              "if": {
+                "required": ["url"],
+                "properties": {
+                  "url": {
+                    "not": {
+                      "pattern": "^(?:[Hh][Tt][Tt][Pp][Ss]?|[Ww][Ss][Ss]?)://(?:[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|127(?:\\.[0-9]{1,3}){3}|\\[::1\\])(?:[:/]|$)"
+                    }
+                  }
+                }
+              },
+              "then": {
+                "required": ["auth_token_env"],
+                "properties": {
+                  "url": {
+                    "pattern": "^(?:[Hh][Tt][Tt][Pp][Ss]|[Ww][Ss][Ss])://"
+                  }
+                }
+              }
+            }
+          ],
+          "properties": {
+            "backend": { "const": "remote" },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^(https?|wss?)://",
+              "description": "User-managed Letta App Server URL. Non-loopback servers require https or wss."
+            },
+            "auth_token_env": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]*$",
+              "description": "Environment variable containing the App Server bearer token. Required for non-loopback servers."
+            },
+            "request_timeout_ms": { "type": "integer", "minimum": 1 },
+            "shared_filesystem": {
+              "type": "boolean",
+              "default": false,
+              "description": "The App Server sees the watched project at the same absolute path. Required for filesystem tools."
+            }
+          }
+        }
+      ]
     },
     "model": {
       "type": "string",

@@ -2,7 +2,7 @@
 version = 1
 project = "my-project"
 agent_id = "agent-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-model = "auto"
+model = "letta/auto"
 include = ["**/*.md", "**/*.txt"]
 exclude = ["**/node_modules/**", "**/.git/**", ".hypervigilant/**", "**/.hypervigilant/**"]
 max_file_size_bytes = 1048576
@@ -12,6 +12,11 @@ mode = "edit"
 routing = "project"
 state_dir = ".hypervigilant"
 instructions = "Review each change in project context. Report concrete issues and make only necessary edits."
+
+# Agent state backend. Use "local" for a fully local command-scoped App Server.
+# Use "remote" with url/auth_token_env for a user-managed App Server.
+[connection]
+backend = "cloud"
 
 [batching]
 strategy = "debounce"

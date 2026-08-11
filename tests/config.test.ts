@@ -33,6 +33,7 @@ describe("config", () => {
         expect(result.data.maxFileSizeBytes).toBe(1_048_576);
         expect(result.data.maxScanFiles).toBe(100);
         expect(result.data.maxScanTextBytes).toBe(65_536);
+        expect(result.data.connection).toEqual({ backend: "cloud" });
         expect(result.data.batching.strategy).toBe("debounce");
         expect(result.data.batching.delayMs).toBe(500);
         expect(result.data.batching.maxWaitMs).toBe(5000);
@@ -56,6 +57,11 @@ describe("config", () => {
         project: "my-project",
         agentId: "agent-abc123",
         model: "auto",
+        connection: {
+          backend: "local",
+          requestTimeoutMs: 90_000,
+          startupTimeoutMs: 45_000,
+        },
         include: ["**/*.ts"],
         exclude: ["**/dist/**"],
         maxFileSizeBytes: 512_000,
@@ -94,6 +100,11 @@ describe("config", () => {
       if (result.success) {
         expect(result.data.batching.strategy).toBe("fixed-window");
         expect(result.data.model).toBe("auto");
+        expect(result.data.connection).toEqual({
+          backend: "local",
+          requestTimeoutMs: 90_000,
+          startupTimeoutMs: 45_000,
+        });
         expect(result.data.mode).toBe("edit");
         expect(result.data.routing).toBe("per-file");
         expect(result.data.worktree.branchPrefix).toBe("hv/reviews");
@@ -167,6 +178,93 @@ describe("config", () => {
         mode: "invalid",
       });
       expect(result.success).toBe(false);
+    });
+
+    it("validates local and remote connection boundaries", () => {
+      const base = { version: 1, project: "test", agentId: "agent-xxx" };
+      expect(configSchema.safeParse({ ...base, connection: { backend: "local" } }).success).toBe(
+        true,
+      );
+      expect(
+        configSchema.safeParse({
+          ...base,
+          mode: "review",
+          connection: {
+            backend: "remote",
+            url: "ws://127.0.0.1:4500",
+          },
+        }).success,
+      ).toBe(true);
+      expect(
+        configSchema.safeParse({
+          ...base,
+          mode: "review",
+          connection: {
+            backend: "remote",
+            url: "wss://agents.example.com",
+          },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          ...base,
+          mode: "review",
+          connection: {
+            backend: "remote",
+            url: "ws://agents.example.com",
+            authTokenEnv: "APP_SERVER_TOKEN",
+          },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          ...base,
+          mode: "review",
+          connection: {
+            backend: "remote",
+            url: "wss://agents.example.com?token=secret",
+            authTokenEnv: "APP_SERVER_TOKEN",
+          },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          ...base,
+          connection: { backend: "remote", url: "not-a-url" },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          ...base,
+          connection: {
+            backend: "remote",
+            url: "ws://127.0.0.1:4500",
+            authTokenEnv: "bad-name",
+          },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          ...base,
+          mode: "edit",
+          connection: {
+            backend: "remote",
+            url: "ws://127.0.0.1:4500",
+            sharedFilesystem: false,
+          },
+        }).success,
+      ).toBe(false);
+      expect(
+        configSchema.safeParse({
+          ...base,
+          mode: "edit",
+          connection: {
+            backend: "remote",
+            url: "ws://127.0.0.1:4500",
+            sharedFilesystem: true,
+          },
+        }).success,
+      ).toBe(true);
     });
 
     it("should reject unsafe worktree branch prefixes", () => {
@@ -313,6 +411,11 @@ routing = "per-file"
 state_dir = ".state"
 instructions = "Compare source with SPEC.md."
 
+[connection]
+backend = "local"
+request_timeout_ms = 90000
+startup_timeout_ms = 45000
+
 [batching]
 strategy = "fixed-window"
 delay_ms = 10
@@ -344,6 +447,11 @@ conversation = "spec-review"
       expect(config.maxScanFiles).toBe(12);
       expect(config.maxScanTextBytes).toBe(4096);
       expect(config.stateDir).toBe(".state");
+      expect(config.connection).toEqual({
+        backend: "local",
+        requestTimeoutMs: 90_000,
+        startupTimeoutMs: 45_000,
+      });
       expect(config.batching).toEqual({
         strategy: "fixed-window",
         delayMs: 10,
@@ -394,6 +502,8 @@ conversation = "spec-review"
       expect(await loadConfig(path)).toEqual(config);
       expect(serialized).toContain('agent_id = "agent-roundtrip"');
       expect(serialized).toContain('model = "auto"');
+      expect(serialized).toContain("[connection]");
+      expect(serialized).toContain('backend = "cloud"');
       expect(serialized).toContain("[batching]");
       expect(serialized).toContain("[tools]");
       expect(serialized).toContain('auto_allow = ["ViewImage"]');
@@ -432,6 +542,12 @@ conversation = "spec-review"
         'version = 1\nproject = "demo"\nagent_id = "agent-demo"\n\n[tools]\nalways_allow = ["ViewImage"]\n',
       );
       expect(loadConfig(unknownPath)).rejects.toThrow('Unknown TOML key "tools.always_allow"');
+
+      await writeFile(
+        unknownPath,
+        'version = 1\nproject = "demo"\nagent_id = "agent-demo"\n\n[connection]\nbackend = "local"\ntoken = "secret"\n',
+      );
+      expect(loadConfig(unknownPath)).rejects.toThrow('Unknown TOML key "connection.token"');
     });
 
     it("loads legacy JSON and prefers TOML during default resolution", async () => {
@@ -442,6 +558,7 @@ conversation = "spec-review"
       );
       const legacyConfig = await loadConfig(legacyPath);
       expect(legacyConfig.project).toBe("legacy");
+      expect(legacyConfig.connection).toEqual({ backend: "cloud" });
       expect(legacyConfig.tools).toEqual({ autoAllow: [], ask: [] });
       expect(resolveConfigPath(root)).toEqual({ path: legacyPath, legacy: true });
 

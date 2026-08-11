@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveCloudApiKey } from "../src/auth.ts";
+import { resolveCloudApiKey, resolveEnvironmentValue } from "../src/auth.ts";
 
 describe("resolveCloudApiKey", () => {
   const root = join(import.meta.dirname, "tmp-auth");
@@ -66,5 +67,41 @@ describe("resolveCloudApiKey", () => {
     expect(() => resolveCloudApiKey(root, { LETTA_API_KEY: "local-server-uuid" })).toThrow(
       "not a Letta Cloud key",
     );
+  });
+});
+
+describe("resolveEnvironmentValue", () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), "hypervigilant-env-"));
+  });
+
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it("reads only the explicitly named variable with project-first precedence", async () => {
+    await writeFile(
+      join(root, ".env"),
+      "OTHER=value\nexport APP_SERVER_TOKEN='project-token'\n",
+      "utf8",
+    );
+    expect(
+      resolveEnvironmentValue("APP_SERVER_TOKEN", root, {
+        APP_SERVER_TOKEN: "ambient-token",
+      }),
+    ).toBe("project-token");
+  });
+
+  it("preserves hashes inside quoted tokens and ignores trailing comments", async () => {
+    await writeFile(join(root, ".env"), "APP_SERVER_TOKEN='part#two' # local token\n", "utf8");
+    expect(resolveEnvironmentValue("APP_SERVER_TOKEN", root, {})).toBe("part#two");
+  });
+
+  it("rejects missing and empty values", async () => {
+    expect(() => resolveEnvironmentValue("MISSING", root, {})).toThrow("MISSING is required");
+    await writeFile(join(root, ".env"), "TOKEN=\n", "utf8");
+    expect(() => resolveEnvironmentValue("TOKEN", root, {})).toThrow("TOKEN");
   });
 });

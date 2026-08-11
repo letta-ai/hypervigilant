@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import { createGlobMatcher, loadConfig, resolveConfigPath } from "./config.ts";
+import { connectionFilesystemAccess, connectionKey } from "./connection.ts";
 import { type FileSnapshot, StateStore, toRelPath } from "./state.ts";
 import { inspectFile, walkProject } from "./watcher.ts";
 import { findExistingIsolatedWorktree } from "./worktree.ts";
@@ -34,6 +35,14 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
 
   log(`Project: ${config.project}`);
   log(`Agent: ${config.agentId}`);
+  log(
+    `Connection: ${
+      config.connection.backend === "remote"
+        ? `remote (${config.connection.url})`
+        : config.connection.backend
+    }`,
+  );
+  log(`Managed filesystem: ${connectionFilesystemAccess(config.connection)}`);
 
   const worktree = config.worktree.enabled
     ? await findExistingIsolatedWorktree(projectRoot, config)
@@ -45,7 +54,11 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
       : resolve(projectRoot, config.stateDir),
   });
   const state = await stateStore.load();
+  const configuredConnectionKey = connectionKey(config.connection);
   const agentMismatch = state !== null && state.agentId !== config.agentId;
+  const connectionMismatch =
+    state !== null && (state.connectionKey ?? "cloud") !== configuredConnectionKey;
+  const routeMismatch = agentMismatch || connectionMismatch;
 
   const matcher = createGlobMatcher(config);
   const absPaths = await walkProject(inspectedRoot, matcher, config);
@@ -108,6 +121,11 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
   if (agentMismatch && state) {
     log(`  State belongs to agent ${state.agentId}; ignoring saved conversation routes.`);
   }
+  if (connectionMismatch && state) {
+    log(
+      `  State belongs to connection ${state.connectionKey ?? "cloud"}; ignoring saved conversation routes.`,
+    );
+  }
 
   const byState: Record<FileState, FileEntry[]> = {
     indexed: [],
@@ -140,8 +158,8 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
     .filter((e) => e.state !== "stale")
     .sort((a, b) => a.relPath.localeCompare(b.relPath));
   const currentLabel = `${currentFiles.length} current ${currentFiles.length === 1 ? "file" : "files"}`;
-  if (agentMismatch) {
-    log("  Conversation routes ignored (agent mismatch).");
+  if (routeMismatch) {
+    log("  Conversation routes ignored (agent or connection mismatch).");
   } else if (config.routing === "project") {
     const convId = state?.projectConversation?.conversationId ?? null;
     log(`  ${currentLabel} -> ${convId ?? "not yet created"}`);
@@ -160,7 +178,7 @@ export async function statusCommand(opts: StatusOptions = {}): Promise<StatusRes
   if (uniqueNames.length > 0) {
     log("");
     log("Named prompt-rule routes:");
-    const namedConvs = (!agentMismatch ? state?.namedConversations : undefined) ?? {};
+    const namedConvs = (!routeMismatch ? state?.namedConversations : undefined) ?? {};
     for (const name of uniqueNames) {
       const id = namedConvs[name] ?? null;
       log(`  ${name}: ${id ?? "not yet created"}`);

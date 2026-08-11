@@ -33,6 +33,7 @@ function makeConfig(o: Partial<HypervigilantConfig> = {}): HypervigilantConfig {
       branchPrefix: "hypervigilant",
     },
     ...o,
+    connection: o.connection ?? { backend: "cloud" },
     promptRules: o.promptRules ?? [],
     tools: o.tools ?? { autoAllow: [], ask: [] },
   };
@@ -66,6 +67,8 @@ describe("status", () => {
     const { lines } = await statusCommand({ path: testRoot });
     expect(hasLine(lines, "Project: test-project")).toBe(true);
     expect(hasLine(lines, "Agent: agent-test-id")).toBe(true);
+    expect(hasLine(lines, "Connection: cloud")).toBe(true);
+    expect(hasLine(lines, "Managed filesystem: shared")).toBe(true);
     expect(hasLine(lines, "Persisted snapshots: 0")).toBe(true);
     expect(hasLine(lines, "New: 1")).toBe(true);
     expect(hasLine(lines, "1 current file -> not yet created")).toBe(true);
@@ -130,7 +133,9 @@ describe("status", () => {
     await saveState(testRoot, config.stateDir, state);
     const { lines } = await statusCommand({ path: testRoot });
     expect(hasLine(lines, "State belongs to agent agent-DIFFERENT")).toBe(true);
-    expect(hasLine(lines, "Conversation routes ignored (agent mismatch).")).toBe(true);
+    expect(hasLine(lines, "Conversation routes ignored (agent or connection mismatch).")).toBe(
+      true,
+    );
     expect(hasLine(lines, "Named prompt-rule routes:")).toBe(true);
     expect(hasLine(lines, "security: not yet created")).toBe(true);
     expect(hasLine(lines, "tests: not yet created")).toBe(true);
@@ -145,6 +150,29 @@ describe("status", () => {
     expect(hasLine(matching.lines, "a.md -> conv-a")).toBe(true);
     expect(hasLine(matching.lines, "gone.md -> conv-gone")).toBe(false);
     expect(hasLine(matching.lines, "security-review: src/auth/** [add, change]")).toBe(true);
+  });
+
+  it("shows remote connection safety and ignores routes from another backend", async () => {
+    await writeFile(join(testRoot, "a.md"), "a\n");
+    const config = makeConfig({
+      mode: "review",
+      connection: {
+        backend: "remote",
+        url: "ws://127.0.0.1:4500",
+        sharedFilesystem: false,
+      },
+    });
+    await writeConfig(testRoot, config);
+    await saveState(testRoot, config.stateDir, {
+      ...baseState(config.agentId),
+      connectionKey: "local",
+      projectConversation: { conversationId: "local-conversation" },
+    });
+    const { lines } = await statusCommand({ path: testRoot });
+    expect(hasLine(lines, "Connection: remote (ws://127.0.0.1:4500)")).toBe(true);
+    expect(hasLine(lines, "Managed filesystem: diff-only")).toBe(true);
+    expect(hasLine(lines, "State belongs to connection local")).toBe(true);
+    expect(hasLine(lines, "local-conversation")).toBe(false);
   });
 
   it("bounds output, never prints contents/hashes, does not mutate state, needs no API key", async () => {
