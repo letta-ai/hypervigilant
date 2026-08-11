@@ -1,7 +1,13 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.1.2/schema.json",
   "files": {
-    "includes": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "demo/model-routing/**/*.ts"]
+    "includes": [
+      "src/**/*.ts",
+      "tests/**/*.ts",
+      "scripts/**/*.ts",
+      "demo/cloud-local-device/**/*.ts",
+      "demo/model-routing/**/*.ts"
+    ]
   },
   "formatter": {
     "enabled": true,

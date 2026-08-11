@@ -4,7 +4,7 @@ title: Self-hosted agent backends
 status: implemented
 dependencies: [SPEC-0000, SPEC-0001, SPEC-0003, SPEC-0005]
 supersedes: []
-implementation_links: [src/connection.ts, src/auth.ts, src/config.ts, src/cli.ts, src/watch.ts, src/agent.ts, src/state.ts, src/status.ts, tests/connection.test.ts, tests/config.test.ts, tests/agent.test.ts, tests/status.test.ts, README.md, hypervigilant.example.toml, hypervigilant.schema.json, package.json, bun.lock]
+implementation_links: [src/connection.ts, src/auth.ts, src/config.ts, src/cli.ts, src/watch.ts, src/agent.ts, src/state.ts, src/status.ts, tests/connection.test.ts, tests/config.test.ts, tests/agent.test.ts, tests/status.test.ts, demo/cloud-local-device/run.ts, demo/cloud-local-device/run.test.ts, demo/cloud-local-device/README.md, README.md, hypervigilant.example.toml, hypervigilant.schema.json, package.json, bun.lock]
 ---
 
 # Self-hosted agent backends
@@ -56,6 +56,7 @@ The token variable name is safe to store; its value is not.
 
 - [x] Existing configuration without `[connection]` loads as Cloud.
 - [x] Cloud connection planning preserves project-first `sk-let-` key resolution and local tool execution.
+- [x] A runnable behavioral demo proves that Cloud agent state can use the current device rather than a managed sandbox by reading an excluded local-only marker and archiving the temporary conversation.
 - [x] Local connection planning requires no Cloud key and starts the local agent backend.
 - [x] A local scan reuses one App Server for validation and delivery, then exits without leaking the server process.
 - [x] Remote connection planning accepts `http`, `https`, `ws`, and `wss` URLs plus bearer-token indirection.

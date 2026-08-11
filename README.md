@@ -84,6 +84,8 @@ backend = "cloud"
 
 Set `LETTA_API_KEY=sk-let-...` in the watched project's `.env`, the invocation directory's `.env`, or the process environment.
 
+This mode does not use a managed sandbox. Hypervigilant keeps agent state in Letta Cloud but runs its App Server, guarded tools, and real project `cwd` on the current device. Run the behavioral proof in [`demo/cloud-local-device`](demo/cloud-local-device/README.md).
+
 ### Fully local agents
 
 Local mode starts one command-scoped App Server with the Letta local backend. Agent state, model access, and filesystem tools remain on the watcher machine. The server is reused for setup and delivery, then stopped when the scan or watcher exits. Configure a local provider in Letta Code first, then initialize Hypervigilant without a Cloud key:
@@ -450,6 +452,13 @@ The following rules protect delivery and local files:
 - Process locks prevent overlapping worktree scans, watchers, merges, and cleanup.
 
 ## Demos
+
+[`cloud-local-device`](demo/cloud-local-device/) proves that a Cloud agent can execute on the current computer without a managed sandbox. The agent must read a random marker from an excluded local-only file; the script verifies the response and archives the temporary Cloud conversation.
+
+```bash
+export LETTA_API_KEY=sk-let-...
+bun demo/cloud-local-device/run.ts --agent-id agent-xxx
+```
 
 [The Doc](demo/the-doc/) turns one browser-edited `PROJECT.md` file into a persistent project interface:
 
