@@ -30,6 +30,8 @@ const conversationStateSchema = z.object({
 export const stateSchema = z.object({
   version: z.literal(1).default(1),
   agentId: z.string(),
+  /** Missing in state written before connection backends were configurable. */
+  connectionKey: z.string().optional(),
   projectConversation: conversationStateSchema.default({
     conversationId: null,
   }),
@@ -245,10 +247,12 @@ export function setProjectConversation(
 export function resetConversationRoutes(
   state: HypervigilantState,
   agentId: string,
+  connectionKey = "cloud",
 ): HypervigilantState {
   return {
     ...state,
     agentId,
+    connectionKey,
     projectConversation: { conversationId: null },
     fileConversations: {},
     namedConversations: {},

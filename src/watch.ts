@@ -12,6 +12,7 @@ import {
   loadConfig,
   resolveConfigPath,
 } from "./config.ts";
+import { connectionFilesystemAccess, connectionKey } from "./connection.ts";
 import { getPermissionStatus, type PermissionPolicy, permissionAgentMode } from "./permissions.ts";
 import {
   type HypervigilantState,
@@ -38,6 +39,7 @@ export interface WatchOptions {
   path?: string;
   configPath?: string;
   runtimeEnv: Record<string, string>;
+  connectionLabel?: string;
   validateAgent?: (agentId: string) => Promise<void>;
   onAssistantText?: (text: string) => void;
   onToolApproval?: (
@@ -96,7 +98,7 @@ async function runCommand(
       await opts.validateAgent(config.agentId);
     } catch (error) {
       throw new Error(
-        `Configured agent ${config.agentId} is not available for the selected Letta account. Check agent_id and the project's .env. ${
+        `Configured agent ${config.agentId} is not available through ${opts.connectionLabel ?? `the ${config.connection.backend} connection`}. Check agent_id and connection settings. ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
@@ -202,6 +204,7 @@ async function runCommand(
             resolvedConfig.path,
             join(projectRoot, ".git"),
           ],
+          filesystemAccess: connectionFilesystemAccess(config.connection),
           runtimeEnv: opts.runtimeEnv,
           onAssistantText: opts.onAssistantText,
           onNamedConversation: (name) =>
@@ -380,10 +383,11 @@ async function initializeCommandState(
   onStatus: WatchOptions["onStatus"],
 ): Promise<{ state: HypervigilantState; pendingChanges: FileChange[] }> {
   const loadedState = await store.load();
+  const configuredConnectionKey = connectionKey(config.connection);
   let state: HypervigilantState;
   if (!loadedState) {
     if (commandMode === "scan") {
-      state = emptyState(config.agentId);
+      state = emptyState(config.agentId, configuredConnectionKey);
       await store.save(state);
     } else {
       onStatus?.("First run: establishing the saved-file baseline...");
@@ -391,10 +395,13 @@ async function initializeCommandState(
       await store.save(state);
       onStatus?.("Baseline established. Existing files were not sent.");
     }
-  } else if (loadedState.agentId !== config.agentId) {
-    state = resetConversationRoutes(loadedState, config.agentId);
+  } else if (
+    loadedState.agentId !== config.agentId ||
+    (loadedState.connectionKey ?? "cloud") !== configuredConnectionKey
+  ) {
+    state = resetConversationRoutes(loadedState, config.agentId, configuredConnectionKey);
     await store.save(state);
-    onStatus?.("Agent changed. Conversation routes were reset.");
+    onStatus?.("Agent or connection changed. Conversation routes were reset.");
   } else {
     state = loadedState;
   }
@@ -547,10 +554,11 @@ export async function establishBinaryBaseline(
   return { ...nextState, binaryBaselineEstablished: true };
 }
 
-function emptyState(agentId: string): HypervigilantState {
+function emptyState(agentId: string, configuredConnectionKey = "cloud"): HypervigilantState {
   return {
     version: 1,
     agentId,
+    connectionKey: configuredConnectionKey,
     projectConversation: { conversationId: null },
     fileConversations: {},
     namedConversations: {},
@@ -563,7 +571,7 @@ export async function establishBaseline(
   projectRoot: string,
   config: HypervigilantConfig,
 ): Promise<HypervigilantState> {
-  let state = emptyState(config.agentId);
+  let state = emptyState(config.agentId, connectionKey(config.connection));
   const matcher = createGlobMatcher(config);
   for (const absPath of await walkProject(projectRoot, matcher, config)) {
     try {

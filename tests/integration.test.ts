@@ -83,6 +83,7 @@ describe("integration", () => {
       instructions: "",
       worktree: { enabled: false, autoCommit: true, branchPrefix: "hypervigilant" },
       ...overrides,
+      connection: overrides.connection ?? { backend: "cloud" },
       promptRules: overrides.promptRules ?? [],
       tools: overrides.tools ?? { autoAllow: [], ask: [] },
     };
@@ -201,11 +202,16 @@ describe("integration", () => {
 
   describe("baseline safeguards", () => {
     it("stores binary metadata without bytes and skips oversized files", async () => {
-      const config = makeConfig({ include: ["**/*"], maxFileSizeBytes: 20 });
+      const config = makeConfig({
+        include: ["**/*"],
+        maxFileSizeBytes: 20,
+        connection: { backend: "local" },
+      });
       await writeFile(join(testRoot, "safe.txt"), "safe", "utf8");
       await writeFile(join(testRoot, "large.txt"), "x".repeat(21), "utf8");
       await writeFile(join(testRoot, "binary.bin"), Buffer.from([0x41, 0x00, 0x42]));
       const state = await establishBaseline(testRoot, config);
+      expect(state.connectionKey).toMatch(/^local:[0-9a-f]{16}$/);
       expect(Object.keys(state.snapshots).sort()).toEqual(["binary.bin", "safe.txt"]);
       expect(state.snapshots["safe.txt"]?.content).toBe("safe");
       expect(state.snapshots["binary.bin"]).toMatchObject({

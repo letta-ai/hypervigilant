@@ -16,7 +16,7 @@ export {
   updateConversationState,
 } from "./agent.ts";
 export { renderDiffPreview, renderDiffPreviews } from "./approval-diff.ts";
-export { resolveCloudApiKey } from "./auth.ts";
+export { resolveCloudApiKey, resolveEnvironmentValue } from "./auth.ts";
 export {
   type Batcher,
   type BatcherOptions,
@@ -48,11 +48,15 @@ export {
   type ConfigParseResult,
   type ConversationRouting,
   configSchema,
+  connectionConfigSchema,
   createGlobMatcher,
   DEFAULT_STATE_DIR,
   type GlobMatcher,
   type HypervigilantConfig,
   LEGACY_CONFIG_FILENAME,
+  LETTA_BACKENDS,
+  type LettaBackend,
+  type LettaConnectionConfig,
   loadConfig,
   PROMPT_RULE_EVENTS,
   type PromptRule,
@@ -63,6 +67,16 @@ export {
   serializeConfigToml,
   validateConfig,
 } from "./config.ts";
+export {
+  type ConnectionClients,
+  type ConnectionPlan,
+  connectionFilesystemAccess,
+  connectionKey,
+  createConnectionClients,
+  type FilesystemAccess,
+  resolveConnectionPlan,
+  validateConnectionAgent,
+} from "./connection.ts";
 export {
   type FileChange as DiffFileChange,
   formatDiffMessage,

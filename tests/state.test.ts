@@ -243,6 +243,7 @@ describe("state", () => {
         expect(result.data.fileConversations).toEqual({});
         expect(result.data.namedConversations).toBeUndefined();
         expect(result.data.snapshots).toEqual({});
+        expect(result.data.connectionKey).toBeUndefined();
       }
     });
 
@@ -345,7 +346,7 @@ describe("state", () => {
       expect(getNamedConversationId(state, "tests")).toBeNull();
     });
 
-    it("clears project, file, and named routes when the agent changes", () => {
+    it("clears project, file, and named routes when the agent or connection changes", () => {
       const state = resetConversationRoutes(
         {
           ...baseState,
@@ -354,8 +355,10 @@ describe("state", () => {
           namedConversations: { security: "conv-security" },
         },
         "agent-new",
+        "remote:ws://127.0.0.1:4500",
       );
       expect(state.agentId).toBe("agent-new");
+      expect(state.connectionKey).toBe("remote:ws://127.0.0.1:4500");
       expect(state.projectConversation.conversationId).toBeNull();
       expect(state.fileConversations).toEqual({});
       expect(state.namedConversations).toEqual({});

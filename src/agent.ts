@@ -19,6 +19,7 @@ import {
   PROHIBITED_LOCAL_TOOLS,
 } from "./client-tools.ts";
 import type { AgentMode, ClientTools, ConversationRouting, PromptRule } from "./config.ts";
+import type { FilesystemAccess } from "./connection.ts";
 import { formatDiffMessage } from "./diff.ts";
 import type { PermissionPolicy } from "./permissions.ts";
 import { formatPromptRuleSection, matchPromptRules, toPromptRuleEvent } from "./prompts.ts";
@@ -48,6 +49,7 @@ export interface AgentDeliveryOptions {
   permissionPolicy?: PermissionPolicy;
   deliveryKind?: "update" | "scan";
   protectedPaths?: string[];
+  filesystemAccess?: FilesystemAccess;
   runtimeEnv: Record<string, string>;
   onAssistantText?: (text: string) => void;
   onNamedConversation?: (name: string) => void;
@@ -339,11 +341,13 @@ function formatAgentMessage(
   const reviewTarget =
     opts.deliveryKind === "scan" ? "these existing files" : "these saved changes";
   const instruction =
-    opts.mode === "edit"
-      ? opts.permissionPolicy === "yolo"
-        ? `Inspect ${reviewTarget}. Use your available tools when useful. Fix clear file problems with Edit or Write. Hypervigilant has enabled scoped automatic approval for those local file tools. Do not ask for permission in prose. Summarize what you reviewed and any action you took.`
-        : `Inspect ${reviewTarget}. Use your available tools when useful. Fix clear file problems with Edit or Write. Hypervigilant will request human approval for those local file tools. Do not ask for permission in prose. Summarize what you reviewed and any action you took.`
-      : `Review ${reviewTarget}. Use your available tools when useful, but do not modify local files. Return concise, specific findings and state clearly when no action is needed.`;
+    opts.filesystemAccess === "diff-only"
+      ? `Review ${reviewTarget} from the supplied diffs. This App Server does not share the watched filesystem, so Hypervigilant's managed filesystem tools are unavailable. Do not try to access the watched checkout. Return concise, specific findings and state clearly when no action is needed.`
+      : opts.mode === "edit"
+        ? opts.permissionPolicy === "yolo"
+          ? `Inspect ${reviewTarget}. Use your available tools when useful. Fix clear file problems with Edit or Write. Hypervigilant has enabled scoped automatic approval for those local file tools. Do not ask for permission in prose. Summarize what you reviewed and any action you took.`
+          : `Inspect ${reviewTarget}. Use your available tools when useful. Fix clear file problems with Edit or Write. Hypervigilant will request human approval for those local file tools. Do not ask for permission in prose. Summarize what you reviewed and any action you took.`
+        : `Review ${reviewTarget}. Use your available tools when useful, but do not modify local files. Return concise, specific findings and state clearly when no action is needed.`;
   const clientTools = opts.clientTools ?? EMPTY_CLIENT_TOOLS;
   const clientToolLines = [
     clientTools.autoAllow.length > 0 ? `Auto-approved: ${clientTools.autoAllow.join(", ")}` : null,
@@ -352,9 +356,7 @@ function formatAgentMessage(
       : null,
   ].filter((line): line is string => line !== null);
   const clientToolInstructions =
-    clientToolLines.length > 0
-      ? `\n\nConfigured local client tools:\n${clientToolLines.join("\n")}`
-      : "";
+    clientToolLines.length > 0 ? `\n\nConfigured client tools:\n${clientToolLines.join("\n")}` : "";
   const projectInstructions = opts.instructions?.trim()
     ? `\n\nProject-specific review instructions:\n${opts.instructions.trim()}`
     : "";
@@ -390,10 +392,15 @@ async function deliverToConversation(
   conversationId: string | null,
   message: string,
 ): Promise<DeliveryResult> {
-  // This allowlist controls only tools executed by the local Agent SDK runtime.
+  // This allowlist controls only tools executed by the selected Agent SDK runtime.
   // Tools attached to the Letta agent remain available under their server-side tool rules.
   const clientTools = opts.clientTools ?? EMPTY_CLIENT_TOOLS;
-  const fileTools = opts.mode === "edit" ? [...EDIT_TOOLS] : [...REVIEW_TOOLS];
+  const fileTools =
+    opts.filesystemAccess === "diff-only"
+      ? []
+      : opts.mode === "edit"
+        ? [...EDIT_TOOLS]
+        : [...REVIEW_TOOLS];
   const configuredTools = configuredClientToolNames(clientTools).filter(
     (toolName) =>
       !READ_ONLY_TOOLS.has(toolName) &&
@@ -416,7 +423,7 @@ async function deliverToConversation(
     opts.protectedPaths,
     clientTools,
     opts.onClientToolApproval,
-    opts.mode === "edit",
+    opts.mode === "edit" && opts.filesystemAccess !== "diff-only",
   );
 
   const sessionOptions: LettaCodeClientSessionOptions = {
@@ -425,7 +432,7 @@ async function deliverToConversation(
     toolset: { base: "none", include: allowedTools },
     permissionMode: "standard",
     canUseTool: approval,
-    cwd: opts.projectRoot,
+    ...(opts.filesystemAccess !== "diff-only" ? { cwd: opts.projectRoot } : {}),
     env: opts.runtimeEnv,
     skillSources: [],
     maxApprovalRecoveryAttempts: 0,

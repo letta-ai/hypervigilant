@@ -12,7 +12,7 @@ The agent can review changes, use attached Letta tools, or use guarded local fil
 
 - [Bun](https://bun.sh) 1.2 or newer
 - Node.js 22.19 or newer
-- A Letta account and API key
+- A Letta Cloud account, a configured local model provider, or a self-hosted Letta App Server
 
 Clone the repository and install its dependencies:
 
@@ -68,6 +68,79 @@ bun run build
 bun link
 hypervigilant help
 ```
+
+## Agent backends
+
+Hypervigilant uses the Agent SDK across three [deployment shapes](https://docs.letta.com/agent-sdk/deployment). The configured backend owns both agent identity and conversation routes; switching it resets saved routes without discarding file snapshots.
+
+### Letta Cloud
+
+Cloud is the default. Agent state lives in Letta Cloud while an SDK-owned local App Server executes guarded filesystem tools on the watcher machine:
+
+```toml
+[connection]
+backend = "cloud"
+```
+
+Set `LETTA_API_KEY=sk-let-...` in the watched project's `.env`, the invocation directory's `.env`, or the process environment.
+
+This mode does not use a managed sandbox. Hypervigilant keeps agent state in Letta Cloud but runs its App Server, guarded tools, and real project `cwd` on the current device. Run the behavioral proof in [`demo/cloud-local-device`](demo/cloud-local-device/README.md).
+
+### Fully local agents
+
+Local mode starts one command-scoped App Server with the Letta local backend. Agent state, model access, and filesystem tools remain on the watcher machine. The server is reused for setup and delivery, then stopped when the scan or watcher exits. Configure a local provider in Letta Code first, then initialize Hypervigilant without a Cloud key:
+
+```bash
+letta --backend local connect ollama
+bun run dev -- init /path/to/project --backend local --create-agent --non-interactive
+```
+
+The resulting configuration contains:
+
+```toml
+[connection]
+backend = "local"
+```
+
+Local agents can use only models exposed by the local backend. `letta/auto` is a Cloud router, not a client-side policy for choosing among local models.
+
+### User-managed App Server
+
+Remote mode connects directly to a [Letta App Server](https://docs.letta.com/platform/app-server) you operate:
+
+```bash
+letta server --backend local --listen ws://127.0.0.1:4500
+
+bun run dev -- init /path/to/project \
+  --backend remote \
+  --server-url ws://127.0.0.1:4500 \
+  --agent-id agent-local-xxx \
+  --mode review \
+  --non-interactive
+```
+
+```toml
+[connection]
+backend = "remote"
+url = "ws://127.0.0.1:4500"
+shared_filesystem = false
+```
+
+Remote connections are diff-only by default. Hypervigilant sends saved diffs but exposes none of its managed filesystem tools because those tools would execute on the App Server machine rather than necessarily against the watched checkout. Tools attached directly to the selected agent remain governed by their App Server rules and must be configured independently.
+
+Set `shared_filesystem = true` or pass `--shared-filesystem` only when the App Server sees the watched project at the same absolute path. With worktree mode, the generated isolated worktree must also exist at the same absolute path. That explicit contract enables the normal read and edit tools.
+
+Non-loopback App Servers require TLS and bearer authentication. Keep the token outside the configuration:
+
+```toml
+[connection]
+backend = "remote"
+url = "wss://agents.example.com"
+auth_token_env = "LETTA_APP_SERVER_TOKEN"
+shared_filesystem = false
+```
+
+Hypervigilant resolves the named variable from the same project-first `.env` chain and sends it as the WebSocket bearer token. It never stores the token in configuration or state. Plaintext and unauthenticated remote connections are accepted only for loopback hosts.
 
 ## What Hypervigilant does
 
@@ -230,7 +303,7 @@ agent_id = "agent-xxx"
 Add `model` to select a model for the project:
 
 ```toml
-model = "auto"
+model = "letta/auto"
 ```
 
 The setting applies to every project, per-file, and named conversation in one configuration. It does not change the agent default or unrelated conversations.
@@ -254,6 +327,7 @@ Legacy `hypervigilant.json` files load only when no TOML file exists.
 | `max_file_size_bytes` | `1048576` | Skip files above this size. |
 | `max_scan_files` | `100` | Block a scan with more selected files. |
 | `max_scan_text_bytes` | `65536` | Block a scan with more total text bytes. |
+| `[connection]` | `cloud` | Select Cloud, fully local, or user-managed App Server agent state. |
 | `mode` | `edit` | Select read-only or approval-gated local file tools. |
 | `routing` | `project` | Use one project conversation or one conversation per file. |
 | `state_dir` | `.hypervigilant` | Store private snapshots and route IDs. |
@@ -349,7 +423,7 @@ Hypervigilant runs normal Git hooks. It does not push branches, bypass hooks, or
 
 ## State and safety
 
-Agents and conversations live in Letta Cloud. Managed local file tools run through the Agent SDK local App Server.
+Agents and conversations live in the configured backend. Cloud mode runs guarded file tools through an SDK-owned local App Server. Local mode keeps state and execution on the watcher machine. Remote mode uses the user-managed App Server and remains diff-only unless a same-path shared filesystem is explicit.
 
 Hypervigilant stores private state under `.hypervigilant/` by default:
 
@@ -360,13 +434,13 @@ Hypervigilant stores private state under `.hypervigilant/` by default:
 
 Keep the state directory private. Hypervigilant excludes its default state directory from Git.
 
-The API key lookup order is:
+Cloud API keys and explicitly named remote bearer-token variables use this lookup order:
 
 1. The watched project's `.env`
 2. The invocation directory's `.env`
 3. The ambient environment
 
-The key must start with `sk-let-`. Hypervigilant passes it to the local runtime but does not store it in configuration or state.
+Cloud keys must start with `sk-let-`. Remote bearer tokens have no prefix requirement. Hypervigilant passes credentials to the selected transport but does not store their values in configuration or state.
 
 The following rules protect delivery and local files:
 
@@ -378,6 +452,13 @@ The following rules protect delivery and local files:
 - Process locks prevent overlapping worktree scans, watchers, merges, and cleanup.
 
 ## Demos
+
+[`cloud-local-device`](demo/cloud-local-device/) proves that a Cloud agent can execute on the current computer without a managed sandbox. The agent must read a random marker from an excluded local-only file; the script verifies the response and archives the temporary Cloud conversation.
+
+```bash
+export LETTA_API_KEY=sk-let-...
+bun demo/cloud-local-device/run.ts --agent-id agent-xxx
+```
 
 [The Doc](demo/the-doc/) turns one browser-edited `PROJECT.md` file into a persistent project interface:
 

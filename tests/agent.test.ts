@@ -586,9 +586,40 @@ describe("agent", () => {
         (await sessionOptions?.canUseTool?.("Edit", { file_path: "/project/a.md" }))?.behavior,
       ).toBe("deny");
       const message = calls[0]?.messages[0] ?? "";
-      expect(message).toContain("Configured local client tools:");
+      expect(message).toContain("Configured client tools:");
       expect(message).toContain("Auto-approved: ViewImage");
       expect(message).toContain("Approval required for every call: TodoWrite");
+    });
+
+    it("keeps a non-shared remote App Server diff-only", async () => {
+      const { client, calls } = fakeClient();
+      await deliverBatch(
+        client,
+        {
+          version: 1,
+          agentId: "agent-xxx",
+          projectConversation: { conversationId: null },
+          fileConversations: {},
+          snapshots: {},
+        },
+        [change("a.md")],
+        {
+          ...options,
+          filesystemAccess: "diff-only",
+          clientTools: { autoAllow: ["ViewImage"], ask: [] },
+        },
+      );
+
+      expect(calls[0]?.options.cwd).toBeUndefined();
+      expect(calls[0]?.options.allowedTools).toEqual(["ViewImage"]);
+      expect(calls[0]?.options.toolset).toEqual({ base: "none", include: ["ViewImage"] });
+      expect(calls[0]?.messages[0]).toContain(
+        "Hypervigilant's managed filesystem tools are unavailable",
+      );
+      expect(
+        (await calls[0]?.options.canUseTool?.("Read", { file_path: "/project/a.md" }))?.behavior,
+      ).toBe("allow");
+      expect(calls[0]?.options.allowedTools).not.toContain("Read");
     });
 
     it("filters reserved and prohibited tools if invalid runtime options bypass config validation", async () => {

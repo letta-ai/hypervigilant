@@ -4,6 +4,7 @@ import {
   CONFIG_FILENAME,
   configSchema,
   type HypervigilantConfig,
+  type LettaConnectionConfig,
   resolveConfigPath,
   serializeConfigToml,
 } from "./config.ts";
@@ -16,6 +17,8 @@ export interface InitOptions {
   path?: string;
   /** Agent ID to use (skip agent creation). */
   agentId?: string;
+  /** Where the agent state and harness are hosted. */
+  connection?: LettaConnectionConfig;
   /** Create a new agent instead of using an existing one. */
   createAgent?: boolean;
   /** Project name. */
@@ -127,6 +130,7 @@ export async function initCommand(
   const batching = opts.batching;
   const stateDir = opts.stateDir;
   let worktreeEnabled = opts.worktree;
+  const remoteDiffOnly = opts.connection?.backend === "remote" && !opts.connection.sharedFilesystem;
 
   if (!opts.nonInteractive) {
     // Interactive prompts
@@ -151,20 +155,26 @@ export async function initCommand(
     }
 
     if (!mode) {
-      const isEdit = await promptYesNo(
-        "Use edit mode (agent changes still require approval)?",
-        true,
-        ask,
-      );
-      mode = isEdit ? "edit" : "review";
+      if (remoteDiffOnly) {
+        mode = "review";
+      } else {
+        const isEdit = await promptYesNo(
+          "Use edit mode (agent changes still require approval)?",
+          true,
+          ask,
+        );
+        mode = isEdit ? "edit" : "review";
+      }
     }
 
     if (worktreeEnabled === undefined) {
-      worktreeEnabled = await promptYesNo(
-        "Use an isolated Git worktree for watched changes and agent repairs?",
-        false,
-        ask,
-      );
+      worktreeEnabled = remoteDiffOnly
+        ? false
+        : await promptYesNo(
+            "Use an isolated Git worktree for watched changes and agent repairs?",
+            false,
+            ask,
+          );
     }
 
     if (!routing) {
@@ -211,6 +221,7 @@ export async function initCommand(
     version: 1,
     project: projectName || "my-project",
     agentId,
+    connection: opts.connection ?? { backend: "cloud" },
     include: include ?? ["**/*.md", "**/*.txt"],
     exclude: exclude ?? [
       "**/node_modules/**",
@@ -225,7 +236,11 @@ export async function initCommand(
       maxWaitMs: 5000,
       windowMs: 2000,
     },
-    mode: mode ?? "edit",
+    mode:
+      mode ??
+      (opts.connection?.backend === "remote" && !opts.connection.sharedFilesystem
+        ? "review"
+        : "edit"),
     routing: routing ?? "project",
     stateDir: stateDir ?? ".hypervigilant",
     worktree: {

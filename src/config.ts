@@ -19,10 +19,93 @@ export type AgentMode = (typeof AGENT_MODES)[number];
 export const CONVERSATION_ROUTING = ["project", "per-file"] as const;
 export type ConversationRouting = (typeof CONVERSATION_ROUTING)[number];
 
+export const LETTA_BACKENDS = ["cloud", "local", "remote"] as const;
+export type LettaBackend = (typeof LETTA_BACKENDS)[number];
+
 export const PROMPT_RULE_EVENTS = ["add", "change", "delete"] as const;
 export type PromptRuleEvent = (typeof PROMPT_RULE_EVENTS)[number];
 
 const batchingStrategySchema = z.enum(BATCHING_STRATEGIES);
+
+const positiveIntegerSchema = z.number().int().min(1);
+const environmentVariableSchema = z
+  .string()
+  .regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "Use a valid environment variable name.");
+const appServerUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => {
+    try {
+      return ["http:", "https:", "ws:", "wss:"].includes(new URL(value).protocol);
+    } catch {
+      return false;
+    }
+  }, "Use an http, https, ws, or wss App Server URL.");
+
+function isLoopbackAppServerUrl(value: string): boolean {
+  try {
+    const hostname = new URL(value).hostname.toLowerCase();
+    return (
+      hostname === "localhost" || hostname === "[::1]" || /^127(?:\.\d{1,3}){3}$/.test(hostname)
+    );
+  } catch {
+    return false;
+  }
+}
+
+export const connectionConfigSchema = z.discriminatedUnion("backend", [
+  z.object({ backend: z.literal("cloud") }).strict(),
+  z
+    .object({
+      backend: z.literal("local"),
+      requestTimeoutMs: positiveIntegerSchema.optional(),
+      startupTimeoutMs: positiveIntegerSchema.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      backend: z.literal("remote"),
+      url: appServerUrlSchema,
+      authTokenEnv: environmentVariableSchema.optional(),
+      requestTimeoutMs: positiveIntegerSchema.optional(),
+      sharedFilesystem: z.boolean().default(false),
+    })
+    .strict()
+    .superRefine((connection, context) => {
+      let url: URL | null = null;
+      try {
+        url = new URL(connection.url);
+        if (url.username || url.password || url.search || url.hash) {
+          context.addIssue({
+            code: "custom",
+            path: ["url"],
+            message:
+              "Remote App Server URLs cannot contain credentials, query parameters, or fragments.",
+          });
+        }
+      } catch {
+        // The field schema reports invalid URLs.
+      }
+      if (!isLoopbackAppServerUrl(connection.url)) {
+        if (!connection.authTokenEnv) {
+          context.addIssue({
+            code: "custom",
+            path: ["authTokenEnv"],
+            message: "Non-loopback remote App Servers require auth_token_env.",
+          });
+        }
+        if (url && url.protocol !== "https:" && url.protocol !== "wss:") {
+          context.addIssue({
+            code: "custom",
+            path: ["url"],
+            message: "Non-loopback remote App Servers require an https or wss URL.",
+          });
+        }
+      }
+    }),
+]);
+
+export type LettaConnectionConfig = z.infer<typeof connectionConfigSchema>;
 
 const clientToolNameSchema = z
   .string()
@@ -148,6 +231,7 @@ export const configSchema = z
       .min(1)
       .refine((value) => value.trim().length > 0, "Model cannot be blank.")
       .optional(),
+    connection: connectionConfigSchema.default({ backend: "cloud" }),
     include: z.array(z.string().min(1)).default(["**/*.md", "**/*.txt"]),
     exclude: z
       .array(z.string().min(1))
@@ -175,6 +259,23 @@ export const configSchema = z
   })
   .strict()
   .superRefine((config, context) => {
+    if (config.connection.backend === "remote" && !config.connection.sharedFilesystem) {
+      if (config.mode !== "review") {
+        context.addIssue({
+          code: "custom",
+          path: ["mode"],
+          message: "Remote App Server connections without shared_filesystem must use review mode.",
+        });
+      }
+      if (config.worktree.enabled) {
+        context.addIssue({
+          code: "custom",
+          path: ["worktree", "enabled"],
+          message:
+            "Remote App Server connections without shared_filesystem cannot use an isolated worktree.",
+        });
+      }
+    }
     const names = new Set<string>();
     for (const [index, rule] of config.promptRules.entries()) {
       if (names.has(rule.name)) {
@@ -206,6 +307,7 @@ const TOML_TOP_LEVEL_KEYS: Record<string, keyof HypervigilantConfig> = {
   project: "project",
   agent_id: "agentId",
   model: "model",
+  connection: "connection",
   include: "include",
   exclude: "exclude",
   max_file_size_bytes: "maxFileSizeBytes",
@@ -219,6 +321,23 @@ const TOML_TOP_LEVEL_KEYS: Record<string, keyof HypervigilantConfig> = {
   tools: "tools",
   worktree: "worktree",
   prompt_rules: "promptRules",
+};
+
+type ConnectionConfigKey =
+  | "backend"
+  | "url"
+  | "authTokenEnv"
+  | "requestTimeoutMs"
+  | "startupTimeoutMs"
+  | "sharedFilesystem";
+
+const TOML_CONNECTION_KEYS: Record<string, ConnectionConfigKey> = {
+  backend: "backend",
+  url: "url",
+  auth_token_env: "authTokenEnv",
+  request_timeout_ms: "requestTimeoutMs",
+  startup_timeout_ms: "startupTimeoutMs",
+  shared_filesystem: "sharedFilesystem",
 };
 
 const TOML_BATCHING_KEYS: Record<string, keyof HypervigilantConfig["batching"]> = {
@@ -267,6 +386,18 @@ function normalizeTomlConfig(raw: unknown): unknown {
         batching[batchingTarget] = batchingValue;
       }
       normalized.batching = batching;
+      continue;
+    }
+    if (key === "connection" && isRecord(value)) {
+      const connection: Record<string, unknown> = {};
+      for (const [connectionKey, connectionValue] of Object.entries(value)) {
+        const connectionTarget = TOML_CONNECTION_KEYS[connectionKey];
+        if (!connectionTarget) {
+          throw new Error(`Unknown TOML key ${JSON.stringify(`connection.${connectionKey}`)}.`);
+        }
+        connection[connectionTarget] = connectionValue;
+      }
+      normalized.connection = connection;
       continue;
     }
     if (key === "tools" && isRecord(value)) {
@@ -403,6 +534,25 @@ export function serializeConfigToml(config: HypervigilantConfig): string {
     `state_dir = ${tomlString(config.stateDir)}`,
   );
   if (config.instructions) lines.push(`instructions = ${tomlString(config.instructions)}`);
+  lines.push("", "[connection]", `backend = ${tomlString(config.connection.backend)}`);
+  if (config.connection.backend === "local") {
+    if (config.connection.requestTimeoutMs !== undefined) {
+      lines.push(`request_timeout_ms = ${config.connection.requestTimeoutMs}`);
+    }
+    if (config.connection.startupTimeoutMs !== undefined) {
+      lines.push(`startup_timeout_ms = ${config.connection.startupTimeoutMs}`);
+    }
+  }
+  if (config.connection.backend === "remote") {
+    lines.push(`url = ${tomlString(config.connection.url)}`);
+    if (config.connection.authTokenEnv !== undefined) {
+      lines.push(`auth_token_env = ${tomlString(config.connection.authTokenEnv)}`);
+    }
+    if (config.connection.requestTimeoutMs !== undefined) {
+      lines.push(`request_timeout_ms = ${config.connection.requestTimeoutMs}`);
+    }
+    lines.push(`shared_filesystem = ${config.connection.sharedFilesystem}`);
+  }
   lines.push(
     "",
     "[batching]",
