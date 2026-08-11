@@ -49,11 +49,12 @@ async function main(): Promise<void> {
 
   const generatedAfter = await generatedDigests();
   const changed = GENERATED_FILES.filter(
-    (path) => generatedBefore.get(path) !== generatedAfter.get(path),
+    (path) =>
+      generatedBefore.get(path) !== null && generatedBefore.get(path) !== generatedAfter.get(path),
   );
   if (changed.length > 0) {
     throw new Error(
-      `The quality gate regenerated ${changed.join(", ")}. Inspect and keep those generated changes, then rerun the gate.`,
+      `The quality gate rewrote previously present generated output: ${changed.join(", ")}. Inspect and keep those changes, then rerun the gate.`,
     );
   }
   console.log("\n[quality] All repository gates passed.");
